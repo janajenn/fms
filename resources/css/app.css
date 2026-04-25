@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom ConfirmDialog Styling – Dark Theme with Amber Accents */
+.p-confirm-dialog {
+    font-family: inherit;
+}
+
+.p-confirm-dialog .p-dialog {
+    background-color: #000;
+    border-radius: 0.75rem;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    border: 1px solid #292524;
+    overflow: hidden;
+}
+
+.p-confirm-dialog .p-dialog-header {
+    background-color: #000;
+    border-bottom: 1px solid #292524;
+    padding: 1.25rem 1.5rem;
+    font-weight: 600;
+    color: #fff;
+    border-top-left-radius: 0.75rem;
+    border-top-right-radius: 0.75rem;
+}
+
+.p-confirm-dialog .p-dialog-header .p-dialog-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.p-confirm-dialog .p-dialog-header .p-dialog-title i {
+    color: #f59e0b; /* amber-500 */
+    font-size: 1.5rem;
+}
+
+.p-confirm-dialog .p-dialog-content {
+    background-color: #000;
+    color: #e5e5e5;
+    padding: 1.5rem;
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+.p-confirm-dialog .p-dialog-footer {
+    background-color: #000;
+    border-top: 1px solid #292524;
+    padding: 1rem 1.5rem 1.5rem;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+}
+
+/* Buttons */
+.p-confirm-dialog .p-button {
+    border-radius: 0.5rem;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    transition: all 0.2s;
+    border: none;
+    cursor: pointer;
+}
+
+.p-confirm-dialog .p-button.p-button-danger {
+    background-color: #dc2626; /* red-600 */
+    color: white;
+}
+
+.p-confirm-dialog .p-button.p-button-danger:hover {
+    background-color: #b91c1c; /* red-700 */
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(220, 38, 38, 0.3);
+}
+
+.p-confirm-dialog .p-button.p-button-secondary {
+    background-color: transparent;
+    border: 1px solid #3f3f46; /* zinc-700 */
+    color: #e5e5e5;
+}
+
+.p-confirm-dialog .p-button.p-button-secondary:hover {
+    background-color: #1f1f1f;
+    border-color: #52525b;
+    transform: translateY(-1px);
+}
+
+/* Focus state */
+.p-confirm-dialog .p-button:focus {
+    outline: none;
+    ring: 2px solid #f59e0b;
+    ring-offset: 2px;
+}
