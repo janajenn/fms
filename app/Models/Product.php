@@ -78,4 +78,11 @@ class Product extends Model
         $image = $this->customizationImages()->where('customization_option_id', $optionId)->first();
         return $image ? $image->image_path : null;
     }
+
+public function availableCustomizationOptions()
+{
+    return $this->belongsToMany(CustomizationOption::class, 'product_customization_option')
+                ->withPivot('is_available', 'sort_order')
+                ->withTimestamps();
+}
 }

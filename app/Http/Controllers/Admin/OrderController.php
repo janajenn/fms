@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use App\Models\User;
+use App\Notifications\OrderStatusUpdatedNotification;
 
 class OrderController extends Controller
 {
@@ -49,19 +51,35 @@ class OrderController extends Controller
         ]);
     }
 
-    public function update(Request $request, Order $order)
+        public function update(Request $request, Order $order)
     {
         $validated = $request->validate([
             'status' => 'required|in:pending,processing,shipped,completed,cancelled',
             'notes' => 'nullable|string',
         ]);
 
+        $oldStatus = $order->status;
+
         $order->update([
             'status' => $validated['status'],
         ]);
 
+        // Send notification to customer if status changed
+        if ($oldStatus !== $validated['status'] && $order->user_id) {
+            try {
+                $user = User::find($order->user_id);
+                if ($user) {
+                    $user->notify(new OrderStatusUpdatedNotification($order, $oldStatus, $validated['status']));
+                    \Log::info('Customer notification sent for order: ' . $order->order_number . ' Status: ' . $oldStatus . ' → ' . $validated['status']);
+                }
+            } catch (\Exception $e) {
+                \Log::error('Failed to send status update notification: ' . $e->getMessage());
+            }
+        }
+
         return redirect()->back()->with('success', 'Order status updated successfully.');
     }
+
 
     public function destroy(Order $order)
     {

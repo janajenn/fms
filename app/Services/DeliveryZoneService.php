@@ -54,7 +54,7 @@ public function checkDeliverabilityByBarangay($barangay)
  */
 public function checkDeliverability($city, $barangay = null)
 {
-    $city = trim(strtolower($city));
+    $city = $city ? trim(strtolower($city)) : '';
     $barangay = $barangay ? trim(strtolower($barangay)) : null;
 
     $zones = DeliveryZone::where('is_active', true)
@@ -85,19 +85,21 @@ public function checkDeliverability($city, $barangay = null)
             }
         }
 
-        // Check for city match
-        foreach ($locations as $location) {
-            if ($location->location_type === 'city') {
-                $locationName = trim(strtolower($location->location_name));
-                if ($locationName === $city ||
-                    str_contains($city, $locationName) ||
-                    str_contains($locationName, $city)) {
-                    return [
-                        'zone' => $zone,
-                        'fee' => (float) $zone->delivery_fee,
-                        'matched_on' => 'city',
-                        'matched_location' => $location->location_name
-                    ];
+        // Check for city match (only if city is provided)
+        if ($city) {
+            foreach ($locations as $location) {
+                if ($location->location_type === 'city') {
+                    $locationName = trim(strtolower($location->location_name));
+                    if ($locationName === $city ||
+                        str_contains($city, $locationName) ||
+                        str_contains($locationName, $city)) {
+                        return [
+                            'zone' => $zone,
+                            'fee' => (float) $zone->delivery_fee,
+                            'matched_on' => 'city',
+                            'matched_location' => $location->location_name
+                        ];
+                    }
                 }
             }
         }

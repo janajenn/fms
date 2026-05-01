@@ -15,6 +15,12 @@ return [
 
     'name' => env('APP_NAME', 'Laravel'),
 
+    'store_location' => [
+    'latitude' => env('STORE_LATITUDE', 8.532339288654399),
+    'longitude' => env('STORE_LONGITUDE', 124.57058152076657),
+    'name' => env('STORE_NAME', 'Main Store'),
+],
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment

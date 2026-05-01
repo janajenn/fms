@@ -6,6 +6,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use App\Notifications\NewOrderNotification;
+use App\Notifications\OrderStatusUpdatedNotification;
 
 class User extends Authenticatable
 {
@@ -20,7 +22,10 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
-        'is_admin', // Add this
+        'is_admin',
+        'city',
+        'phone',
+        'address',
     ];
 
     /**
@@ -43,22 +48,47 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
-            'is_admin' => 'boolean', // Cast to boolean
+            'is_admin' => 'boolean',
         ];
     }
 
-     public function orders()
+    /**
+     * Check if user is admin
+     */
+    public function isAdmin()
+    {
+        return $this->is_admin === true;
+    }
+
+    /**
+     * Get orders for the user
+     */
+    public function orders()
     {
         return $this->hasMany(Order::class);
     }
 
-     public function materialStockLogs()
+    /**
+     * Get material stock logs for the user
+     */
+    public function materialStockLogs()
     {
         return $this->hasMany(MaterialStockLog::class);
     }
 
-     public function carts()
+    /**
+     * Get cart items for the user
+     */
+    public function carts()
     {
         return $this->hasMany(Cart::class);
+    }
+
+    /**
+     * Route notifications for mail channel (optional)
+     */
+    public function routeNotificationForMail()
+    {
+        return $this->email;
     }
 }

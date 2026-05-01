@@ -10,9 +10,12 @@ use App\Models\OrderItemCustomization;
 use App\Models\StockLog;
 use App\Models\MaterialStockLog;
 use App\Models\CustomizationOption;
+use App\Models\User;
+use App\Notifications\NewOrderNotification;
 use App\Services\DeliveryZoneService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
@@ -56,13 +59,21 @@ class CheckoutController extends Controller
 {
     try {
         $validated = $request->validate([
-            'city' => 'required|string|max:255',
+            'city' => 'nullable|string|max:255',  // Changed from 'required' to 'nullable'
             'barangay' => 'nullable|string|max:255',
         ]);
 
+        // If both are empty, return error
+        if (empty($validated['city']) && empty($validated['barangay'])) {
+            return response()->json([
+                'available' => false,
+                'message' => 'Please provide a city or barangay'
+            ], 200);
+        }
+
         // Try to find the location in delivery zones
         $result = $this->deliveryZoneService->checkDeliverability(
-            $validated['city'],
+            $validated['city'] ?? '',
             $validated['barangay'] ?? null
         );
 
@@ -83,9 +94,10 @@ class CheckoutController extends Controller
                 'message' => $result['fee'] == 0 ? 'Free delivery available!' : "Delivery fee: ₱{$result['fee']}"
             ]);
         } else {
+            $searchTerm = !empty($validated['city']) ? $validated['city'] : $validated['barangay'];
             return response()->json([
                 'available' => false,
-                'message' => "We don't currently deliver to {$validated['city']}. Please submit a delivery request."
+                'message' => "We don't currently deliver to {$searchTerm}. Please submit a delivery request."
             ], 200);
         }
     } catch (\Exception $e) {
@@ -96,271 +108,306 @@ class CheckoutController extends Controller
         ], 200);
     }
 }
-
 public function store(Request $request)
-{
-    try {
-        \Log::info('=== CHECKOUT STARTED ===');
-        \Log::info('Request data:', $request->all());
-
-        $validated = $request->validate([
-            'email' => 'required|email',
-            'name' => 'required|string|max:255',
-            'address' => 'required|string',
-            'city' => 'required|string',
-            'barangay' => 'nullable|string',
-            'postal_code' => 'required|string',
-            'phone' => 'required|string',
-            'notes' => 'nullable|string',
-            'payment_method' => 'required|in:cod,gcash,paymaya,bank_transfer',
-            'delivery_fee' => 'nullable|numeric|min:0',
-        ]);
-
-        \Log::info('Validation passed');
-
-        $cartItems = $this->getCartItems($request);
-
-        if ($cartItems->isEmpty()) {
-            return redirect()->route('cart.index')->with('error', 'Your cart is empty.');
-        }
-
-        // Calculate shipping
-        $shipping = $validated['delivery_fee'] ?? $this->deliveryZoneService->getDeliveryFee($validated['city'], $validated['barangay'] ?? null) ?? 0;
-
-        // Check if delivery is available
-        $deliveryResult = $this->deliveryZoneService->checkDeliverability(
-            $validated['city'],
-            $validated['barangay'] ?? null
-        );
-
-        if (!$deliveryResult) {
-            return redirect()->back()->with('error', 'We do not deliver to this area. Please submit a delivery request.');
-        }
-
-        DB::beginTransaction();
-
+    {
         try {
-            $user = Auth::user();
+            Log::info('=== CHECKOUT STARTED ===');
+            Log::info('Request data:', $request->all());
 
-            if (!$user && $request->has('create_account')) {
-                $user = \App\Models\User::create([
-                    'name' => $validated['name'],
-                    'email' => $validated['email'],
-                    'password' => bcrypt(\Illuminate\Support\Str::random(16)),
-                    'is_admin' => false,
-                ]);
-                \Log::info('New user created: ' . $user->id);
-            } elseif ($user) {
-                $user->update(['city' => $validated['city']]);
-            }
-
-            // Calculate totals
-            $subtotal = $cartItems->sum(function($item) {
-                return $item->unit_price * $item->quantity;
-            });
-            $tax = $subtotal * 0.12;
-            $total = $subtotal + $tax + $shipping;
-
-            // Calculate down payment for COD
-            $downPaymentPercentage = 30;
-            $downPaymentAmount = 0;
-            $remainingBalance = 0;
-            $paymentStatus = 'pending';
-            $orderStatus = 'pending';
-
-           if ($validated['payment_method'] === 'cod') {
-    $downPaymentAmount = ($total * $downPaymentPercentage) / 100;
-    $remainingBalance = $total - $downPaymentAmount;
-    $paymentStatus = 'pending_downpayment';
-    $orderStatus = 'pending';
-} else {
-    // GCash, PayMaya, Bank Transfer - payment pending until webhook confirms
-    $downPaymentAmount = $total;
-    $remainingBalance = 0;
-    $paymentStatus = 'pending_payment';  // MUST BE 'pending_payment'
-    $orderStatus = 'pending';
-}
-
-            // Create order
-            $order = Order::create([
-                'user_id' => $user ? $user->id : null,
-                'order_number' => 'ORD-' . strtoupper(\Illuminate\Support\Str::random(10)),
-                'total_price' => $total,
-                'shipping_cost' => $shipping,
-                'status' => $orderStatus,
-                'payment_method' => $validated['payment_method'],
-                'payment_status' => $paymentStatus,
-                'down_payment_percentage' => $downPaymentPercentage,
-                'down_payment_amount' => $downPaymentAmount,
-                'remaining_balance' => $remainingBalance,
-                'customer_name' => $validated['name'],
-                'customer_email' => $validated['email'],
-                'shipping_address' => json_encode([
-                    'address' => $validated['address'],
-                    'barangay' => $validated['barangay'] ?? null,
-                    'city' => $validated['city'],
-                    'postal_code' => $validated['postal_code'],
-                    'phone' => $validated['phone'],
-                    'notes' => $validated['notes'],
-                ]),
+            $validated = $request->validate([
+                'email' => 'required|email',
+                'name' => 'required|string|max:255',
+                'address' => 'required|string',
+                'city' => 'required|string',
+                'barangay' => 'nullable|string',
+                'postal_code' => 'nullable|string',
+                'phone' => 'nullable|string',
+                'notes' => 'nullable|string',
+                'payment_method' => 'required|in:cod,gcash,paymaya,bank_transfer',
+                'delivery_fee' => 'nullable|numeric|min:0',
+                'latitude' => 'nullable|numeric',
+                'longitude' => 'nullable|numeric',
             ]);
 
-            \Log::info('Order created: ' . $order->id);
+            Log::info('Validation passed');
 
-            // Create order items (but don't deduct stock for GCash until payment confirmed)
-            $shouldDeductStock = ($validated['payment_method'] === 'cod');
+            $cartItems = $this->getCartItems($request);
 
-            foreach ($cartItems as $cartItem) {
-                \Log::info('Processing cart item: ' . $cartItem->id);
+            if ($cartItems->isEmpty()) {
+                return redirect()->route('cart.index')->with('error', 'Your cart is empty.');
+            }
 
-                // Create order item
-                $orderItem = OrderItem::create([
-                    'order_id' => $order->id,
-                    'product_id' => $cartItem->product_id,
-                    'size_id' => $cartItem->size_id,
-                    'quantity' => $cartItem->quantity,
-                    'price' => $cartItem->unit_price,
-                ]);
+            // Calculate shipping
+            $shipping = $validated['delivery_fee'] ?? $this->deliveryZoneService->getDeliveryFee($validated['city'], $validated['barangay'] ?? null) ?? 0;
 
-                \Log::info('Order item created: ' . $orderItem->id);
+            // Check if delivery is available
+            $deliveryResult = $this->deliveryZoneService->checkDeliverability(
+                $validated['city'],
+                $validated['barangay'] ?? null
+            );
 
-                // Save customizations
-                if ($cartItem->customizations) {
-                    foreach ($cartItem->customizations as $categoryId => $options) {
-                        foreach ($options as $option) {
-                            OrderItemCustomization::create([
-                                'order_item_id' => $orderItem->id,
-                                'attribute' => $option['name'],
-                                'value' => $option['name'],
-                                'price_modifier' => $option['price_modifier'],
-                            ]);
-                        }
-                    }
-                    \Log::info('Customizations saved');
+            if (!$deliveryResult) {
+                return redirect()->back()->with('error', 'We do not deliver to this area. Please submit a delivery request.');
+            }
+
+            DB::beginTransaction();
+
+            try {
+                $user = Auth::user();
+
+                if (!$user && $request->has('create_account')) {
+                    $user = User::create([
+                        'name' => $validated['name'],
+                        'email' => $validated['email'],
+                        'password' => bcrypt(\Illuminate\Support\Str::random(16)),
+                        'is_admin' => false,
+                    ]);
+                    Log::info('New user created: ' . $user->id);
+
+                    // Log the user in
+                    Auth::login($user);
+                } elseif ($user) {
+                    $user->update(['city' => $validated['city']]);
                 }
 
-                // Deduct stock only for COD orders (COD has down payment)
-                if ($shouldDeductStock) {
-                    // DEDUCT PRODUCT STOCK
-                    if ($cartItem->size_id) {
-                        $size = $cartItem->size;
-                        if ($size) {
-                            $stockBefore = $size->stock;
-                            $size->decrement('stock', $cartItem->quantity);
+                // Calculate totals
+                $subtotal = $cartItems->sum(function($item) {
+                    return $item->unit_price * $item->quantity;
+                });
+                $tax = $subtotal * 0.12;
+                $total = $subtotal + $tax + $shipping;
 
-                            StockLog::create([
-                                'product_id' => $cartItem->product_id,
-                                'size_id' => $size->id,
-                                'size_label' => $size->size,
-                                'user_id' => auth()->id(),
-                                'type' => 'order',
-                                'quantity' => $cartItem->quantity,
-                                'stock_before' => $stockBefore,
-                                'stock_after' => $size->stock,
-                                'reason' => "Order #{$order->order_number}",
-                                'order_id' => $order->id,
-                            ]);
-                            \Log::info('Stock deducted for size: ' . $size->size);
-                        }
-                    } else {
-                        $inventory = $cartItem->product->inventory;
-                        if ($inventory) {
-                            $stockBefore = $inventory->stock;
-                            $inventory->decrement('stock', $cartItem->quantity);
+                // Calculate down payment for COD
+                $downPaymentPercentage = 30;
+                $downPaymentAmount = 0;
+                $remainingBalance = 0;
+                $paymentStatus = 'pending';
+                $orderStatus = 'pending';
 
-                            StockLog::create([
-                                'product_id' => $cartItem->product_id,
-                                'user_id' => auth()->id(),
-                                'type' => 'order',
-                                'quantity' => $cartItem->quantity,
-                                'stock_before' => $stockBefore,
-                                'stock_after' => $inventory->stock,
-                                'reason' => "Order #{$order->order_number}",
-                                'order_id' => $order->id,
-                            ]);
-                            \Log::info('Stock deducted for product: ' . $cartItem->product->name);
-                        }
-                    }
+                if ($validated['payment_method'] === 'cod') {
+                    $downPaymentAmount = ($total * $downPaymentPercentage) / 100;
+                    $remainingBalance = $total - $downPaymentAmount;
+                    $paymentStatus = 'pending_downpayment';
+                    $orderStatus = 'pending';
+                } else {
+                    // GCash, PayMaya, Bank Transfer - payment pending until webhook confirms
+                    $downPaymentAmount = $total;
+                    $remainingBalance = 0;
+                    $paymentStatus = 'pending_payment';
+                    $orderStatus = 'pending';
+                }
 
-                    // DEDUCT MATERIAL STOCK
+                // Get store location from config
+                $storeLat = config('app.store_location.latitude');
+                $storeLng = config('app.store_location.longitude');
+                $storeName = config('app.store_location.name');
+
+                // Create order
+                $order = Order::create([
+                    'user_id' => $user ? $user->id : null,
+                    'order_number' => 'ORD-' . strtoupper(\Illuminate\Support\Str::random(10)),
+                    'total_price' => $total,
+                    'shipping_cost' => $shipping,
+                    'status' => $orderStatus,
+                    'payment_method' => $validated['payment_method'],
+                    'payment_status' => $paymentStatus,
+                    'down_payment_percentage' => $downPaymentPercentage,
+                    'down_payment_amount' => $downPaymentAmount,
+                    'remaining_balance' => $remainingBalance,
+                    'customer_name' => $validated['name'],
+                    'customer_email' => $validated['email'],
+                    'shipping_address' => json_encode([
+                        'address' => $validated['address'],
+                        'barangay' => $validated['barangay'] ?? null,
+                        'city' => $validated['city'],
+                        'postal_code' => $validated['postal_code'],
+                        'phone' => $validated['phone'],
+                        'notes' => $validated['notes'],
+                    ]),
+                    'receiver_latitude' => $validated['latitude'] ?? null,
+                    'receiver_longitude' => $validated['longitude'] ?? null,
+                    'receiver_city' => $validated['city'],
+                    'receiver_barangay' => $validated['barangay'] ?? null,
+                    'sender_latitude' => $storeLat,
+                    'sender_longitude' => $storeLng,
+                    'sender_name' => $storeName,
+                ]);
+
+                Log::info('Order created: ' . $order->id);
+
+                // Create order items (but don't deduct stock for GCash until payment confirmed)
+                $shouldDeductStock = ($validated['payment_method'] === 'cod');
+
+                foreach ($cartItems as $cartItem) {
+                    Log::info('Processing cart item: ' . $cartItem->id);
+
+                    // Create order item
+                    $orderItem = OrderItem::create([
+                        'order_id' => $order->id,
+                        'product_id' => $cartItem->product_id,
+                        'size_id' => $cartItem->size_id,
+                        'quantity' => $cartItem->quantity,
+                        'price' => $cartItem->unit_price,
+                    ]);
+
+                    Log::info('Order item created: ' . $orderItem->id);
+
+                    // Save customizations
                     if ($cartItem->customizations) {
                         foreach ($cartItem->customizations as $categoryId => $options) {
                             foreach ($options as $option) {
-                                $customizationOption = CustomizationOption::find($option['id']);
+                                OrderItemCustomization::create([
+                                    'order_item_id' => $orderItem->id,
+                                    'attribute' => $option['name'],
+                                    'value' => $option['name'],
+                                    'price_modifier' => $option['price_modifier'],
+                                ]);
+                            }
+                        }
+                        Log::info('Customizations saved');
+                    }
 
-                                if ($customizationOption && $customizationOption->material_id) {
-                                    $material = $customizationOption->material;
-                                    if ($material) {
-                                        $quantityToDeduct = $customizationOption->quantity_used * $cartItem->quantity;
+                    // Deduct stock only for COD orders (COD has down payment)
+                    if ($shouldDeductStock) {
+                        // DEDUCT PRODUCT STOCK
+                        if ($cartItem->size_id) {
+                            $size = $cartItem->size;
+                            if ($size) {
+                                $stockBefore = $size->stock;
+                                $size->decrement('stock', $cartItem->quantity);
 
-                                        if ($material->stock < $quantityToDeduct) {
-                                            throw new \Exception("Insufficient material stock: {$material->name}");
+                                StockLog::create([
+                                    'product_id' => $cartItem->product_id,
+                                    'size_id' => $size->id,
+                                    'size_label' => $size->size,
+                                    'user_id' => auth()->id(),
+                                    'type' => 'order',
+                                    'quantity' => $cartItem->quantity,
+                                    'stock_before' => $stockBefore,
+                                    'stock_after' => $size->stock,
+                                    'reason' => "Order #{$order->order_number}",
+                                    'order_id' => $order->id,
+                                ]);
+                                Log::info('Stock deducted for size: ' . $size->size);
+                            }
+                        } else {
+                            $inventory = $cartItem->product->inventory;
+                            if ($inventory) {
+                                $stockBefore = $inventory->stock;
+                                $inventory->decrement('stock', $cartItem->quantity);
+
+                                StockLog::create([
+                                    'product_id' => $cartItem->product_id,
+                                    'user_id' => auth()->id(),
+                                    'type' => 'order',
+                                    'quantity' => $cartItem->quantity,
+                                    'stock_before' => $stockBefore,
+                                    'stock_after' => $inventory->stock,
+                                    'reason' => "Order #{$order->order_number}",
+                                    'order_id' => $order->id,
+                                ]);
+                                Log::info('Stock deducted for product: ' . $cartItem->product->name);
+                            }
+                        }
+
+                        // DEDUCT MATERIAL STOCK
+                        if ($cartItem->customizations) {
+                            foreach ($cartItem->customizations as $categoryId => $options) {
+                                foreach ($options as $option) {
+                                    $customizationOption = CustomizationOption::find($option['id']);
+
+                                    if ($customizationOption && $customizationOption->material_id) {
+                                        $material = $customizationOption->material;
+                                        if ($material) {
+                                            $quantityToDeduct = $customizationOption->quantity_used * $cartItem->quantity;
+
+                                            if ($material->stock < $quantityToDeduct) {
+                                                throw new \Exception("Insufficient material stock: {$material->name}");
+                                            }
+
+                                            $materialStockBefore = $material->stock;
+                                            $material->decrement('stock', $quantityToDeduct);
+
+                                            MaterialStockLog::create([
+                                                'material_id' => $material->id,
+                                                'user_id' => auth()->id(),
+                                                'type' => 'out',
+                                                'quantity' => $quantityToDeduct,
+                                                'stock_before' => $materialStockBefore,
+                                                'stock_after' => $material->stock,
+                                                'reason' => "Order #{$order->order_number} - {$cartItem->product->name} ({$option['name']})",
+                                            ]);
+                                            Log::info('Material stock deducted: ' . $material->name . ' - Quantity: ' . $quantityToDeduct);
                                         }
-
-                                        $materialStockBefore = $material->stock;
-                                        $material->decrement('stock', $quantityToDeduct);
-
-                                        MaterialStockLog::create([
-                                            'material_id' => $material->id,
-                                            'user_id' => auth()->id(),
-                                            'type' => 'out',
-                                            'quantity' => $quantityToDeduct,
-                                            'stock_before' => $materialStockBefore,
-                                            'stock_after' => $material->stock,
-                                            'reason' => "Order #{$order->order_number} - {$cartItem->product->name} ({$option['name']})",
-                                        ]);
-                                        \Log::info('Material stock deducted: ' . $material->name . ' - Quantity: ' . $quantityToDeduct);
                                     }
                                 }
                             }
                         }
                     }
                 }
+
+                // Clear cart
+                $this->clearCart($request);
+                session()->forget('delivery_fee');
+
+                // ============================================
+                // SEND NOTIFICATIONS
+                // ============================================
+
+                // 1. Send notification to ALL admin users about new order
+                $admins = User::where('is_admin', true)->get();
+                foreach ($admins as $admin) {
+                    try {
+                        $admin->notify(new \App\Notifications\NewOrderNotification($order));
+                        Log::info('Admin notification sent to: ' . $admin->email . ' for order: ' . $order->order_number);
+                    } catch (\Exception $e) {
+                        Log::error('Failed to send admin notification: ' . $e->getMessage());
+                    }
+                }
+
+                // 2. Send notification to customer about order confirmation (optional)
+                if ($user && $user->id) {
+                    try {
+                        $user->notify(new \App\Notifications\OrderStatusUpdatedNotification($order, null, 'pending'));
+                        Log::info('Customer order confirmation sent to: ' . $user->email);
+                    } catch (\Exception $e) {
+                        Log::error('Failed to send customer notification: ' . $e->getMessage());
+                    }
+                }
+
+                DB::commit();
+
+                Log::info('=== CHECKOUT COMPLETED SUCCESSFULLY ===');
+                Log::info('Notifications sent for order: ' . $order->order_number);
+
+                // Redirect based on payment method
+                if ($validated['payment_method'] === 'cod') {
+                    return redirect()->route('payment.cod.instructions', $order)
+                        ->with('success', 'Please complete your down payment to confirm your order.');
+                }
+
+                if ($validated['payment_method'] === 'gcash') {
+                    return redirect()->route('payment.initiate', $order);
+                }
+
+                // For other payment methods (paymaya, bank_transfer)
+                return redirect()->route('customer.orders.show', $order)
+                    ->with('success', 'Order created! Please complete the payment to confirm your order.');
+
+            } catch (\Exception $e) {
+                DB::rollBack();
+                Log::error('Transaction failed: ' . $e->getMessage());
+                Log::error('Stack trace: ' . $e->getTraceAsString());
+                return redirect()->back()->with('error', 'Failed to process order: ' . $e->getMessage());
             }
-
-            // Clear cart
-            $this->clearCart($request);
-            session()->forget('delivery_fee');
-
-            DB::commit();
-
-            \Log::info('=== CHECKOUT COMPLETED SUCCESSFULLY ===');
-
-            // Redirect based on payment method
-            if ($validated['payment_method'] === 'cod') {
-                return redirect()->route('payment.cod.instructions', $order)
-                    ->with('success', 'Please complete your down payment to confirm your order.');
-            }
-
-            if ($validated['payment_method'] === 'gcash') {
-    // Clear cart and commit transaction first
-    $this->clearCart($request);
-    session()->forget('delivery_fee');
-
-    DB::commit();
-
-    // Return a direct redirect (not Inertia)
-    return redirect()->route('payment.initiate', $order);
-}
-
-            // For other payment methods (paymaya, bank_transfer)
-            return redirect()->route('customer.orders.show', $order)
-                ->with('success', 'Order created! Please complete the payment to confirm your order.');
-
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::error('Validation failed: ' . json_encode($e->errors()));
+            return redirect()->back()->withErrors($e->errors())->withInput();
         } catch (\Exception $e) {
-            DB::rollBack();
-            \Log::error('Transaction failed: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            Log::error('Checkout failed: ' . $e->getMessage());
             return redirect()->back()->with('error', 'Failed to process order: ' . $e->getMessage());
         }
-    } catch (\Illuminate\Validation\ValidationException $e) {
-        \Log::error('Validation failed: ' . json_encode($e->errors()));
-        return redirect()->back()->withErrors($e->errors())->withInput();
-    } catch (\Exception $e) {
-        \Log::error('Checkout failed: ' . $e->getMessage());
-        return redirect()->back()->with('error', 'Failed to process order: ' . $e->getMessage());
     }
-}
 
 
     private function getCartItems(Request $request)

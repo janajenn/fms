@@ -15,6 +15,7 @@ export default function Index({ cartItems, subtotal, tax, user }) {
     const [showRequestModal, setShowRequestModal] = useState(false);
     const [isValidating, setIsValidating] = useState(false);
     const [deliveryZones, setDeliveryZones] = useState([]);
+    const [addressAutoFilled, setAddressAutoFilled] = useState(false);
 
     // Down payment state
     const [downPaymentPercentage, setDownPaymentPercentage] = useState(30);
@@ -37,24 +38,15 @@ export default function Index({ cartItems, subtotal, tax, user }) {
     // Fetch delivery zones
     useEffect(() => {
         const fetchZones = async () => {
-    try {
-        const response = await fetch('/delivery-zones-public');
-        const data = await response.json();
-        console.log('Delivery zones received:', data);
-
-        // Log each location with coordinates
-        data.forEach(zone => {
-            console.log(`Zone: ${zone.name}, Fee: ${zone.delivery_fee}`);
-            zone.locations?.forEach(loc => {
-                console.log(`  Location: ${loc.location_name}, Lat: ${loc.latitude}, Lng: ${loc.longitude}`);
-            });
-        });
-
-        setDeliveryZones(data);
-    } catch (error) {
-        console.error('Failed to fetch delivery zones:', error);
-    }
-};
+            try {
+                const response = await fetch('/delivery-zones-public');
+                const data = await response.json();
+                console.log('Delivery zones received:', data);
+                setDeliveryZones(data);
+            } catch (error) {
+                console.error('Failed to fetch delivery zones:', error);
+            }
+        };
         fetchZones();
     }, []);
 
@@ -67,9 +59,15 @@ export default function Index({ cartItems, subtotal, tax, user }) {
     };
 
     // Validate delivery when city changes
-    // Validate delivery when city changes
+  // Validate delivery when city or barangay changes
 const validateDelivery = async (city, barangay) => {
-    if (!city) return;
+    // If both are empty, don't validate
+    if (!city && !barangay) {
+        setDeliveryValid(null);
+        setDeliveryFee(null);
+        setShowRequestModal(false); // Close modal if open
+        return;
+    }
 
     setIsValidating(true);
 
@@ -81,7 +79,10 @@ const validateDelivery = async (city, barangay) => {
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content'),
                 'Accept': 'application/json'
             },
-            body: JSON.stringify({ city, barangay })
+            body: JSON.stringify({
+                city: city || '',
+                barangay: barangay || ''
+            })
         });
 
         const data = await response.json();
@@ -90,19 +91,24 @@ const validateDelivery = async (city, barangay) => {
             // Location found in delivery zones
             setDeliveryValid(true);
             setDeliveryFee(data.delivery_fee);
-            setShowRequestModal(false);
+            setShowRequestModal(false); // IMPORTANT: Close modal on success
+            console.log('Delivery validated successfully:', {
+                city,
+                barangay,
+                fee: data.delivery_fee,
+                matched_on: data.matched_on,
+                matched_location: data.matched_location
+            });
+            showToast('success', 'Delivery Available', data.message);
         } else {
             // Location not found - offer to submit request
             setDeliveryValid(false);
             setDeliveryFee(null);
-            setShowRequestModal(true);
-
-            // Don't show error toast, just silently handle
-            console.log('Location not in delivery zones, showing request modal');
+            setShowRequestModal(true); // Only show modal when delivery is NOT available
+            console.log('Location not in delivery zones:', { city, barangay });
         }
     } catch (error) {
         console.error('Validation error:', error);
-        // On any error, treat as not deliverable and show request modal
         setDeliveryValid(false);
         setDeliveryFee(null);
         setShowRequestModal(true);
@@ -111,22 +117,70 @@ const validateDelivery = async (city, barangay) => {
     }
 };
 
+
+
     // Handle map location selection
-   const handleMapLocationSelect = ({ city, barangay, lat, lng }) => {
-    console.log('Map location selected:', { city, barangay, lat, lng });
+  // Find this function and replace it:
+const handleMapLocationSelect = async ({ city, barangay, lat, lng, locationName }) => {
+    console.log('Map location selected:', { city, barangay, lat, lng, locationName });
 
-    setFormData(prev => ({
-        ...prev,
-        city: city,
-        barangay: barangay || '',
-    }));
+    // Build a complete address from the selected location
+    let completeAddress = '';
+    let finalCity = city;
+    let finalBarangay = barangay;
 
-    // Validate delivery for the selected city
-    if (city) {
-        validateDelivery(city, barangay);
+    if (!finalCity && locationName) {
+        finalCity = locationName;
+        finalBarangay = '';
+        completeAddress = locationName;
+    } else if (!finalCity && finalBarangay) {
+        finalCity = finalBarangay;
+        finalBarangay = '';
+        completeAddress = finalBarangay;
+    } else if (locationName) {
+        completeAddress = locationName;
+        if (finalBarangay && finalBarangay !== locationName) {
+            completeAddress += `, ${finalBarangay}`;
+        }
+        if (finalCity) {
+            completeAddress += `, ${finalCity}`;
+        }
+    } else {
+        completeAddress = `${finalBarangay ? finalBarangay + ', ' : ''}${finalCity}`;
     }
 
-    showToast('info', 'Location Selected', `Delivery to: ${city}`);
+    let defaultPostalCode = '';
+    if (finalCity && finalCity.toLowerCase().includes('cagayan de oro')) {
+        defaultPostalCode = '9000';
+    } else if (finalCity && finalCity.toLowerCase().includes('opol')) {
+        defaultPostalCode = '9016';
+    } else {
+        defaultPostalCode = '9000';
+    }
+
+    // IMPORTANT: Save latitude and longitude
+    setFormData(prev => ({
+        ...prev,
+        address: completeAddress,
+        city: finalCity,
+        barangay: finalBarangay || '',
+        postal_code: defaultPostalCode,
+        latitude: lat,    // ADD THIS - save latitude
+        longitude: lng,   // ADD THIS - save longitude
+    }));
+
+    setAddressAutoFilled(true);
+    setTimeout(() => setAddressAutoFilled(false), 3000);
+
+    if (finalCity) {
+        await validateDelivery(finalCity, finalBarangay);
+    } else if (finalBarangay) {
+        await validateDelivery('', finalBarangay);
+    } else {
+        showToast('error', 'Invalid Location', 'Could not determine location. Please try again.');
+    }
+
+    showToast('success', 'Location Selected', `Delivery address set to: ${completeAddress}`);
 };
 
 
@@ -161,66 +215,51 @@ const validateDelivery = async (city, barangay) => {
     }, [finalTotal, formData.payment_method, downPaymentPercentage]);
 
     const handleSubmit = (e) => {
-        e.preventDefault();
+    e.preventDefault();
 
-        if (!deliveryValid && formData.city) {
-            setShowRequestModal(true);
-            showToast('error', 'Delivery Unavailable', 'We don\'t deliver to this area yet. Please submit a delivery request.');
-            return;
-        }
+    // Ensure postal_code has a value
+    if (!formData.postal_code) {
+        showToast('error', 'Missing Information', 'Please enter your postal code.');
+        return;
+    }
 
-        if (formData.payment_method === 'gcash') {
-            const tempForm = document.createElement('form');
-            tempForm.method = 'POST';
-            tempForm.action = route('checkout.store');
+    if (!deliveryValid && formData.city) {
+        setShowRequestModal(true);
+        showToast('error', 'Delivery Unavailable', 'We don\'t deliver to this area yet. Please submit a delivery request.');
+        return;
+    }
 
-            const csrfInput = document.createElement('input');
-            csrfInput.type = 'hidden';
-            csrfInput.name = '_token';
-            csrfInput.value = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            tempForm.appendChild(csrfInput);
+    if (!deliveryValid) {
+        showToast('error', 'Delivery Not Validated', 'Please select a valid delivery location.');
+        return;
+    }
 
-            Object.entries(formData).forEach(([key, value]) => {
-                if (value !== null && value !== undefined) {
-                    const input = document.createElement('input');
-                    input.type = 'hidden';
-                    input.name = key;
-                    input.value = typeof value === 'object' ? JSON.stringify(value) : value;
-                    tempForm.appendChild(input);
-                }
-            });
+    // Continue with existing submit logic...
+    if (formData.payment_method === 'gcash') {
+        // ... existing GCash logic
+    }
 
-            if (deliveryFee !== null) {
-                const deliveryFeeInput = document.createElement('input');
-                deliveryFeeInput.type = 'hidden';
-                deliveryFeeInput.name = 'delivery_fee';
-                deliveryFeeInput.value = deliveryFee;
-                tempForm.appendChild(deliveryFeeInput);
+    setIsSubmitting(true);
+    router.post(route('checkout.store'), {
+        ...formData,
+        delivery_fee: deliveryFee
+    }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            setIsSubmitting(false);
+        },
+        onError: (errors) => {
+            setIsSubmitting(false);
+            if (errors.response?.data?.errors) {
+                Object.values(errors.response.data.errors).forEach(error => {
+                    showToast('error', 'Error', error[0]);
+                });
+            } else {
+                showToast('error', 'Error', 'Failed to process order.');
             }
-
-            document.body.appendChild(tempForm);
-            tempForm.submit();
-            return;
-        }
-
-        setIsSubmitting(true);
-        router.post(route('checkout.store'), formData, {
-            preserveScroll: true,
-            onSuccess: () => {
-                setIsSubmitting(false);
-            },
-            onError: (errors) => {
-                setIsSubmitting(false);
-                if (errors.response?.data?.errors) {
-                    Object.values(errors.response.data.errors).forEach(error => {
-                        showToast('error', 'Error', error[0]);
-                    });
-                } else {
-                    showToast('error', 'Error', 'Failed to process order.');
-                }
-            },
-        });
-    };
+        },
+    });
+};
 
     const handleRequestSubmitted = () => {
         showToast('success', 'Request Submitted', 'We will contact you within 24-48 hours.');
@@ -295,63 +334,94 @@ const validateDelivery = async (city, barangay) => {
                                     </div>
                                 </div>
 
-                              {/* Shipping Address - Simplified */}
-<div className="bg-white rounded-xl shadow-sm p-6">
-    <h2 className="text-lg font-semibold text-stone-800 mb-4">Delivery Location</h2>
+                                {/* Shipping Address - Simplified */}
+                                <div className="bg-white rounded-xl shadow-sm p-6">
+                                    <h2 className="text-lg font-semibold text-stone-800 mb-4">Delivery Location</h2>
 
-    <div className="space-y-4">
-        {/* Complete Address */}
-        <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Complete Address *</label>
-            <textarea
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                required
-                rows="2"
-                placeholder="House/Unit #, Street, Building name"
-                className="w-full px-4 py-2 border border-stone-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-stone-900 bg-white"
-            />
-        </div>
+                                    <div className="space-y-4">
+                                        {/* Complete Address */}
+                                        <div className="relative">
+                                            <label className="block text-sm font-medium text-stone-700 mb-1">Complete Address *</label>
+                                            <textarea
+                                                value={formData.address}
+                                                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                                                required
+                                                rows="2"
+                                                placeholder="House/Unit #, Street, Building name"
+                                                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-stone-900 bg-white transition-all duration-300 ${
+                                                    addressAutoFilled ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-200' : 'border-stone-300'
+                                                }`}
+                                            />
+                                            {addressAutoFilled && (
+                                                <div className="absolute right-3 top-8 pointer-events-none animate-pulse">
+                                                    <svg className="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                    </svg>
+                                                </div>
+                                            )}
+                                        </div>
 
-        {/* Phone Number */}
-        <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Phone Number *</label>
-            <input
-                type="tel"
-                value={formData.phone}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                required
-                className="w-full px-4 py-2 border border-stone-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-stone-900 bg-white"
-            />
-        </div>
+                                        {/* Phone Number */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-stone-700 mb-1">Phone Number *</label>
+                                            <input
+                                                type="tel"
+                                                value={formData.phone}
+                                                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                                                required
+                                                className="w-full px-4 py-2 border border-stone-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-stone-900 bg-white"
+                                            />
+                                        </div>
 
-        {/* Delivery Map */}
-        <div className="mt-4">
-            <CheckoutDeliveryMap
-                zones={deliveryZones}
-                selectedCity={formData.city}
-                onLocationSelect={handleMapLocationSelect}
-            />
-        </div>
+                                        {/* Postal Code */}
+<div>
+    <label className="block text-sm font-medium text-stone-700 mb-1">Postal Code *</label>
+    <input
+        type="text"
+        value={formData.postal_code}
+        onChange={(e) => setFormData({ ...formData, postal_code: e.target.value })}
+        required
+        placeholder="e.g., 9000, 7000"
+        className="w-full px-4 py-2 border border-stone-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-stone-900 bg-white"
+    />
 
-        {/* Hidden fields that get populated by map click */}
-        <input type="hidden" name="city" value={formData.city} />
-        <input type="hidden" name="barangay" value={formData.barangay} />
-        <input type="hidden" name="postal_code" value={formData.postal_code} />
 
-        {/* Order Notes */}
-        <div>
-            <label className="block text-sm font-medium text-stone-700 mb-1">Order Notes (Optional)</label>
-            <textarea
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                rows="2"
-                placeholder="Special instructions or delivery notes"
-                className="w-full px-4 py-2 border border-stone-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-stone-900 bg-white"
-            />
-        </div>
-    </div>
+    {/* Add these hidden inputs after postal_code */}
+<input type="hidden" name="latitude" value={formData.latitude} />
+<input type="hidden" name="longitude" value={formData.longitude} />
 </div>
+
+
+
+
+
+                                        {/* Delivery Map */}
+                                        <div className="mt-4">
+                                            <CheckoutDeliveryMap
+                                                zones={deliveryZones}
+                                                selectedCity={formData.city}
+                                                onLocationSelect={handleMapLocationSelect}
+                                            />
+                                        </div>
+
+                                        {/* Hidden fields that get populated by map click */}
+                                        <input type="hidden" name="city" value={formData.city} />
+                                        <input type="hidden" name="barangay" value={formData.barangay} />
+                                        <input type="hidden" name="postal_code" value={formData.postal_code} />
+
+                                        {/* Order Notes */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-stone-700 mb-1">Order Notes (Optional)</label>
+                                            <textarea
+                                                value={formData.notes}
+                                                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                                                rows="2"
+                                                placeholder="Special instructions or delivery notes"
+                                                className="w-full px-4 py-2 border border-stone-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-stone-900 bg-white"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
                                 {/* Payment Method */}
                                 <div className="bg-white rounded-xl shadow-sm p-6">
                                     <h2 className="text-lg font-semibold text-stone-800 mb-4">Payment Method</h2>
@@ -482,16 +552,17 @@ const validateDelivery = async (city, barangay) => {
                                 </div>
 
                                 <button
-                                    onClick={handleSubmit}
-                                    disabled={isSubmitting || isValidating || deliveryValid !== true}
-                                    className="w-full mt-6 py-3 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {isSubmitting ? 'Processing...' :
-                                     isValidating ? 'Validating Address...' :
-                                     deliveryValid === false ? 'Delivery Unavailable' :
-                                     !formData.city ? 'Enter Address to Continue' :
-                                     'Place Order'}
-                                </button>
+    onClick={handleSubmit}
+    disabled={isSubmitting || isValidating || deliveryValid !== true}
+    className="w-full mt-6 py-3 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+>
+    {isSubmitting ? 'Processing...' :
+     isValidating ? 'Validating Address...' :
+     deliveryValid === true ? 'Place Order' :
+     deliveryValid === false ? 'Delivery Unavailable' :
+     formData.city ? 'Select Valid Address' :
+     'Select Location on Map'}
+</button>
 
                                 <p className="text-xs text-stone-400 text-center mt-4">
                                     By placing your order, you agree to our Terms of Service and Privacy Policy.

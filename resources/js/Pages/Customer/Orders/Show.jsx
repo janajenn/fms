@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import CustomerLayout from '@/Layouts/CustomerLayout';
+import OrderReceipt from '@/Components/OrderReceipt';
 import { Head, Link } from '@inertiajs/react';
 import {
     ArrowLeft,
@@ -13,10 +15,15 @@ import {
     Phone,
     Mail,
     FileText,
-    ChevronRight
+    ChevronRight,
+    Navigation,
+    Printer
 } from 'lucide-react';
+import OrderTrackingMap from '@/Components/OrderTrackingMap';
 
 export default function Show({ order }) {
+    const [showReceipt, setShowReceipt] = useState(false);
+
     const statusConfig = {
         pending: {
             label: 'Pending',
@@ -87,8 +94,8 @@ export default function Show({ order }) {
 
             <div className="min-h-screen bg-gradient-to-br from-stone-50 via-white to-stone-100">
                 <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 md:py-12">
-                    {/* Back Button */}
-                    <div className="mb-6">
+                    {/* Back Button and Receipt Button */}
+                    <div className="mb-6 flex justify-between items-center">
                         <Link
                             href="/customer/orders"
                             className="inline-flex items-center gap-2 text-stone-500 hover:text-amber-600 transition-colors group"
@@ -96,6 +103,14 @@ export default function Show({ order }) {
                             <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
                             <span className="text-sm font-medium">Back to Orders</span>
                         </Link>
+
+                        <button
+                            onClick={() => setShowReceipt(true)}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-stone-200 text-stone-700 rounded-lg hover:bg-stone-50 hover:border-amber-300 transition-all duration-200 shadow-sm"
+                        >
+                            <Printer className="w-4 h-4" />
+                            <span className="text-sm font-medium">View Receipt</span>
+                        </button>
                     </div>
 
                     {/* Order Header Card */}
@@ -222,6 +237,22 @@ export default function Show({ order }) {
                                                 ₱{formatCurrency(order.total_price * 0.12)}
                                             </span>
                                         </div>
+                                        {order.down_payment_amount > 0 && order.payment_method === 'cod' && (
+                                            <>
+                                                <div className="flex justify-between text-sm pt-2">
+                                                    <span className="text-stone-500">Down Payment (30%)</span>
+                                                    <span className="text-emerald-600 font-semibold">
+                                                        ₱{formatCurrency(order.down_payment_amount)}
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between text-sm">
+                                                    <span className="text-stone-500">Remaining Balance</span>
+                                                    <span className="text-amber-600 font-semibold">
+                                                        ₱{formatCurrency(order.remaining_balance)}
+                                                    </span>
+                                                </div>
+                                            </>
+                                        )}
                                         <div className="border-t border-stone-200 pt-3 mt-3">
                                             <div className="flex justify-between">
                                                 <span className="text-base font-semibold text-stone-800">Total</span>
@@ -267,6 +298,24 @@ export default function Show({ order }) {
                                                 </div>
                                             )}
                                         </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Delivery Route Map - Only show if coordinates exist */}
+                            {order.receiver_latitude && order.receiver_longitude && (
+                                <div className="bg-white rounded-2xl shadow-sm border border-stone-100 overflow-hidden">
+                                    <div className="px-6 py-4 border-b border-stone-100 bg-stone-50/50">
+                                        <h2 className="text-lg font-semibold text-stone-800 flex items-center gap-2">
+                                            <Navigation className="w-5 h-5 text-amber-500" />
+                                            Delivery Route
+                                        </h2>
+                                    </div>
+                                    <div className="p-5">
+                                        <OrderTrackingMap
+                                            orderId={order.id}
+                                            currentStatus={order.status}
+                                        />
                                     </div>
                                 </div>
                             )}
@@ -353,6 +402,14 @@ export default function Show({ order }) {
                     </div>
                 </div>
             </div>
+
+            {/* Receipt Modal */}
+            {showReceipt && (
+                <OrderReceipt
+                    order={order}
+                    onClose={() => setShowReceipt(false)}
+                />
+            )}
         </CustomerLayout>
     );
 }

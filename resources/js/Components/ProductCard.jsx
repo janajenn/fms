@@ -11,6 +11,10 @@ export default function ProductCard({ product, viewMode = 'grid' }) {
     const imageUrl = product.first_image_url || (product.images && product.images[0] ? `/storage/${product.images[0].image_path}` : null);
     const isInStock = product.inventory?.stock > 0 || (product.sizes && product.sizes.some(s => s.stock > 0));
 
+
+    // Add this right before the return statement
+console.log('ProductCard - product.customizations:', product.customizations);
+console.log('ProductCard - product:', product);
     if (viewMode === 'list') {
         return (
             <>

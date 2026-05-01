@@ -1,11 +1,23 @@
 import { Link, usePage, router } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
+import NotificationDropdown from '@/Components/NotificationDropdown';
 
 export default function CustomerLayout({ children }) {
     const { auth, cartCount: initialCartCount, url } = usePage().props;
     const user = auth?.user;
+    const notifications = auth?.notifications || [];
+    const unreadCount = auth?.unread_count || 0;
     const [showMobileMenu, setShowMobileMenu] = useState(false);
     const [cartCount, setCartCount] = useState(initialCartCount || 0);
+
+    // Auto-refresh notifications every 30 seconds
+    useEffect(() => {
+        const interval = setInterval(() => {
+            router.reload({ only: ['auth'] });
+        }, 30000);
+
+        return () => clearInterval(interval);
+    }, []);
 
     // Debug: Log the current URL to see what's being received
     useEffect(() => {
@@ -79,6 +91,13 @@ export default function CustomerLayout({ children }) {
                                         My Orders
                                     </Link>
 
+                                    {/* Notification Bell */}
+                                    <NotificationDropdown
+                                        notifications={notifications}
+                                        unreadCount={unreadCount}
+                                        userType="customer"
+                                    />
+
                                     {/* User Dropdown */}
                                     <div className="relative group">
                                         <button className="flex items-center space-x-2 text-stone-300 hover:text-amber-500 transition duration-300 text-sm font-medium tracking-wide">
@@ -97,12 +116,11 @@ export default function CustomerLayout({ children }) {
                                             </Link>
 
                                             <Link
-    href="/customer/profile"
-    className="block px-4 py-2 text-sm text-stone-300 hover:bg-stone-900 hover:text-amber-500 transition-colors"
->
-    My Profile
-</Link>
-
+                                                href="/customer/profile"
+                                                className="block px-4 py-2 text-sm text-stone-300 hover:bg-stone-900 hover:text-amber-500 transition-colors"
+                                            >
+                                                My Profile
+                                            </Link>
 
                                             <Link
                                                 href={safeRoute('logout')}

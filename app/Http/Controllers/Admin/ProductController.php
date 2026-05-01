@@ -62,15 +62,12 @@ public function create()
 public function store(Request $request)
 {
     try {
-        // First, get the customizations data
         $customizationsData = $request->input('customizations');
 
-        // If it's a JSON string, decode it
         if (is_string($customizationsData)) {
             $customizationsData = json_decode($customizationsData, true);
         }
 
-        // Now validate (remove customizations from validation rules)
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -124,40 +121,23 @@ public function store(Request $request)
             }
         }
 
-        // Store customizations - filter out empty categories
+        // Store available customization options (the ones selected by admin)
         if (!empty($customizationsData) && is_array($customizationsData)) {
-            $filteredCustomizations = array_filter($customizationsData, function($options) {
-                if (empty($options)) return false;
-                // Check if any option is selected
+            $availableOptionIds = [];
+            foreach ($customizationsData as $categoryId => $options) {
                 foreach ($options as $option) {
                     if (isset($option['selected']) && $option['selected'] === true) {
-                        return true;
+                        $availableOptionIds[] = $option['id'];
                     }
                 }
-                return false;
-            });
-
-            // Also filter out selected:false options within each category
-            foreach ($filteredCustomizations as $categoryId => $options) {
-                $filteredCustomizations[$categoryId] = array_filter($options, function($option) {
-                    return isset($option['selected']) && $option['selected'] === true;
-                });
-                // Reindex array
-                $filteredCustomizations[$categoryId] = array_values($filteredCustomizations[$categoryId]);
             }
-
-            $product->customizations = $filteredCustomizations;
-            $product->save();
+            $product->availableCustomizationOptions()->sync($availableOptionIds);
         }
 
-        // ==========================================
-        // SAVE CUSTOMIZATION IMAGES - PUT THIS HERE
-        // ==========================================
+        // Save customization images
         if ($request->hasFile('customization_images')) {
             foreach ($request->file('customization_images') as $optionId => $image) {
                 $path = $image->store('product-customizations', 'public');
-
-                // Create or update the customization image record
                 \App\Models\ProductCustomizationImage::updateOrCreate(
                     [
                         'product_id' => $product->id,
@@ -173,13 +153,11 @@ public function store(Request $request)
 
     } catch (\Exception $e) {
         \Log::error('Product creation failed: ' . $e->getMessage());
-        \Log::error('Request data: ' . json_encode($request->all()));
         return redirect()->back()
             ->withInput()
             ->with('error', 'Failed to create product: ' . $e->getMessage());
     }
 }
-
     /**
      * Show the form for editing the specified product.
      */
@@ -215,15 +193,12 @@ public function store(Request $request)
  public function update(Request $request, Product $product)
 {
     try {
-        // Get customizations data first (it's a JSON string)
         $customizationsData = $request->input('customizations');
 
-        // Decode if it's a string
         if (is_string($customizationsData)) {
             $customizationsData = json_decode($customizationsData, true);
         }
 
-        // Validate - remove customizations from validation
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -239,7 +214,6 @@ public function store(Request $request)
             'sizes.*.stock' => 'integer|min:0',
             'images' => 'nullable|array',
             'images.*' => 'image|mimes:jpeg,png,jpg,gif|max:2048',
-            // 'customizations' removed from validation
         ]);
 
         // Update product basic info
@@ -251,7 +225,7 @@ public function store(Request $request)
             'category_id' => $validated['category_id'],
         ]);
 
-        // Sync sizes (keep your existing code)
+        // Sync sizes
         $existingSizeIds = $product->sizes->pluck('id')->toArray();
         $updatedSizeIds = [];
 
@@ -281,7 +255,6 @@ public function store(Request $request)
             }
         }
 
-        // Remove sizes that are no longer present
         $sizesToDelete = array_diff($existingSizeIds, $updatedSizeIds);
         ProductSize::whereIn('id', $sizesToDelete)->delete();
 
@@ -303,30 +276,26 @@ public function store(Request $request)
             }
         }
 
-        // Store customizations - filter to only include selected options
+        // Update available customization options
         if (!empty($customizationsData) && is_array($customizationsData)) {
-            $filteredCustomizations = [];
+            $availableOptionIds = [];
             foreach ($customizationsData as $categoryId => $options) {
-                // Only keep options that are selected
-                $selectedOptions = array_filter($options, function($option) {
-                    return isset($option['selected']) && $option['selected'] === true;
-                });
-                if (!empty($selectedOptions)) {
-                    $filteredCustomizations[$categoryId] = array_values($selectedOptions);
+                foreach ($options as $option) {
+                    if (isset($option['selected']) && $option['selected'] === true) {
+                        $availableOptionIds[] = $option['id'];
+                    }
                 }
             }
-            $product->customizations = $filteredCustomizations;
+            $product->availableCustomizationOptions()->sync($availableOptionIds);
         } else {
-            $product->customizations = null;
+            $product->availableCustomizationOptions()->sync([]);
         }
-        $product->save();
 
         // Save customization images
         if ($request->hasFile('customization_images')) {
             foreach ($request->file('customization_images') as $optionId => $image) {
                 $path = $image->store('product-customizations', 'public');
 
-                // Delete old image if exists
                 $existingImage = \App\Models\ProductCustomizationImage::where('product_id', $product->id)
                     ->where('customization_option_id', $optionId)
                     ->first();
@@ -335,7 +304,6 @@ public function store(Request $request)
                     \Storage::disk('public')->delete($existingImage->image_path);
                 }
 
-                // Create or update the customization image record
                 \App\Models\ProductCustomizationImage::updateOrCreate(
                     [
                         'product_id' => $product->id,

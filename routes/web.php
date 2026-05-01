@@ -17,6 +17,7 @@ use App\Http\Controllers\Admin\MaterialController;
 use App\Http\Controllers\Admin\CustomizationOptionController;
 use App\Http\Controllers\Admin\SupplierController;
 use App\Http\Controllers\Admin\CustomizationCategoryController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\Admin\DeliveryZoneController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\WebhookController;
@@ -26,7 +27,7 @@ use App\Http\Controllers\Admin\DeliveryZoneRequestController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
-// Public routes
+// Public routes (no authentication required)
 Route::get('/', function () {
     return Inertia::render('Welcome', [
         'laravelVersion' => app()->version(),
@@ -37,67 +38,76 @@ Route::get('/', function () {
 Route::get('/products', [CustomerProductController::class, 'index'])->name('products.index');
 Route::get('/products/{product}', [CustomerProductController::class, 'show'])->name('products.show');
 
-// Cart routes - require authentication
+// MAKE THESE PUBLIC - Move delivery validation OUTSIDE auth middleware
+Route::post('/checkout/validate-delivery', [CheckoutController::class, 'validateDelivery'])->name('checkout.validate-delivery');
+Route::get('/delivery-zones-public', [DeliveryZoneController::class, 'getPublicZones'])->name('delivery-zones.public');
+
+// Authenticated routes only
 Route::middleware(['auth'])->group(function () {
-   Route::prefix('cart')->name('cart.')->group(function () {
-    Route::get('/', [CartController::class, 'index'])->name('index');
-    Route::post('/add/{product}', [CartController::class, 'add'])->name('add');
-    Route::patch('/update/{cartId}', [CartController::class, 'update'])->name('update');
-    Route::delete('/remove/{cartId}', [CartController::class, 'remove'])->name('remove');
-    Route::delete('/clear', [CartController::class, 'clear'])->name('clear');
+    // Cart routes
+    Route::prefix('cart')->name('cart.')->group(function () {
+        Route::get('/', [CartController::class, 'index'])->name('index');
+        Route::post('/add/{product}', [CartController::class, 'add'])->name('add');
+        Route::patch('/update/{cartId}', [CartController::class, 'update'])->name('update');
+        Route::delete('/remove/{cartId}', [CartController::class, 'remove'])->name('remove');
+        Route::delete('/clear', [CartController::class, 'clear'])->name('clear');
+    });
 
+    // API route for order tracking (requires auth)
+    Route::get('/api/order-route/{order}', [CustomerOrderController::class, 'getRoute'])->name('api.order.route');
 
-
-
-
-});
-
-Route::get('/delivery-zones-public', [App\Http\Controllers\Admin\DeliveryZoneController::class, 'getPublicZones'])
-    ->name('delivery-zones.public');
-
-// Payment routes (inside auth middleware)
-Route::middleware(['auth'])->group(function () {
+    // Payment routes
     Route::get('/payment/initiate/{order}', [PaymentController::class, 'initiate'])->name('payment.initiate');
     Route::get('/payment/success/{order}', [PaymentController::class, 'success'])->name('payment.success');
     Route::get('/payment/cancel/{order}', [PaymentController::class, 'cancel'])->name('payment.cancel');
     Route::get('/payment/status/{order}', [PaymentController::class, 'checkStatus'])->name('payment.status');
-});
 
+    // Webhook (keep as is)
+    Route::post('/api/webhooks/paymongo', [WebhookController::class, 'handlePayMongo'])->name('webhook.paymongo');
 
-
-Route::post('/api/webhooks/paymongo', [WebhookController::class, 'handlePayMongo'])->name('webhook.paymongo');
-
-    // Checkout routes
+    // Checkout routes (store requires auth)
     Route::prefix('checkout')->name('checkout.')->group(function () {
         Route::get('/', [CheckoutController::class, 'index'])->name('index');
         Route::post('/', [CheckoutController::class, 'store'])->name('store');
-        Route::post('/validate-delivery', [CheckoutController::class, 'validateDelivery'])->name('validate-delivery');
+        // validate-delivery is now outside this group (public)
     });
 
     // Delivery request route
     Route::post('/delivery-request', [DeliveryRequestController::class, 'store'])->name('delivery-request.store');
 
-
-
     // Dashboard redirect based on role
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     // Customer routes
-   Route::prefix('customer')->name('customer.')->group(function () {
-    Route::get('/dashboard', [CustomerDashboardController::class, 'index'])->name('dashboard');
-    Route::get('/profile', [ProfileController::class, 'index'])->name('profile.index');
-    Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
+    Route::prefix('customer')->name('customer.')->group(function () {
+        Route::get('/dashboard', [CustomerDashboardController::class, 'index'])->name('dashboard');
+        Route::get('/profile', [ProfileController::class, 'index'])->name('profile.index');
+        Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
+        Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
 
         Route::prefix('orders')->group(function () {
-        Route::get('/', [CustomerOrderController::class, 'index'])->name('orders.index');
-        Route::get('/{order}', [CustomerOrderController::class, 'show'])->name('orders.show'); // Make sure this exists
-        Route::post('/', [CustomerOrderController::class, 'store'])->name('orders.store');
+            Route::get('/', [CustomerOrderController::class, 'index'])->name('orders.index');
+            Route::get('/{order}', [CustomerOrderController::class, 'show'])->name('orders.show');
+            Route::post('/', [CustomerOrderController::class, 'store'])->name('orders.store');
+        });
     });
-    });
+
+
+// Notification routes
+Route::post('/notifications/mark-as-read', [App\Http\Controllers\NotificationController::class, 'markAsRead'])
+    ->name('notifications.mark-as-read');
+Route::post('/notifications/mark-all-read', [App\Http\Controllers\NotificationController::class, 'markAllAsRead'])
+    ->name('notifications.mark-all-read');
+Route::post('/notifications/mark-and-redirect', [App\Http\Controllers\NotificationController::class, 'markAndRedirect'])
+    ->name('notifications.mark-and-redirect');
+Route::get('/notifications/unread-count', [App\Http\Controllers\NotificationController::class, 'getUnreadCount'])
+    ->name('notifications.unread-count');
+
+
+    
 });
 
-// Admin routes
+// Admin routes (require auth + admin middleware)
 Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
     Route::resource('products', AdminProductController::class);
@@ -150,22 +160,20 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
         Route::delete('/{supplier}', [SupplierController::class, 'destroy'])->name('destroy');
     });
 
-   // Delivery Zones Management Routes
-Route::prefix('delivery-zones')->name('delivery-zones.')->group(function () {
-    Route::get('/', [DeliveryZoneController::class, 'index'])->name('index');
-    Route::post('/', [DeliveryZoneController::class, 'store'])->name('store');
-    Route::put('/{zone}', [DeliveryZoneController::class, 'update'])->name('update');
-    Route::delete('/{zone}', [DeliveryZoneController::class, 'destroy'])->name('destroy');
-    Route::post('/{zone}/add-location', [DeliveryZoneController::class, 'addLocation'])->name('add-location');
-    Route::delete('/locations/{location}', [DeliveryZoneController::class, 'removeLocation'])->name('remove-location');
-    Route::post('/{zone}/add-location-coordinates', [DeliveryZoneController::class, 'addLocationWithCoordinates'])->name('add-location-coordinates');
-    Route::get('/geocode', [DeliveryZoneController::class, 'geocodeLocation'])->name('geocode');
-});
+    // Delivery Zones Management Routes
+    Route::prefix('delivery-zones')->name('delivery-zones.')->group(function () {
+        Route::get('/', [DeliveryZoneController::class, 'index'])->name('index');
+        Route::post('/', [DeliveryZoneController::class, 'store'])->name('store');
+        Route::put('/{zone}', [DeliveryZoneController::class, 'update'])->name('update');
+        Route::delete('/{zone}', [DeliveryZoneController::class, 'destroy'])->name('destroy');
+        Route::post('/{zone}/add-location', [DeliveryZoneController::class, 'addLocation'])->name('add-location');
+        Route::delete('/locations/{location}', [DeliveryZoneController::class, 'removeLocation'])->name('remove-location');
+        Route::post('/{zone}/add-location-coordinates', [DeliveryZoneController::class, 'addLocationWithCoordinates'])->name('add-location-coordinates');
+        Route::get('/geocode', [DeliveryZoneController::class, 'geocodeLocation'])->name('geocode');
+    });
 
     // Delivery Requests Management Routes
     Route::prefix('delivery-requests')->name('delivery-requests.')->group(function () {
-         Route::post('/delivery-request', [\App\Http\Controllers\Customer\DeliveryRequestController::class, 'store'])
-        ->name('delivery-request.store');
         Route::get('/', [DeliveryZoneRequestController::class, 'index'])->name('index');
         Route::put('/{deliveryRequest}', [DeliveryZoneRequestController::class, 'update'])->name('update');
         Route::delete('/{deliveryRequest}', [DeliveryZoneRequestController::class, 'destroy'])->name('destroy');
@@ -176,16 +184,18 @@ Route::prefix('delivery-zones')->name('delivery-zones.')->group(function () {
     Route::delete('/products/images/{image}', [AdminProductController::class, 'deleteImage'])->name('products.images.delete');
     Route::post('/products/{product}/images', [AdminProductController::class, 'addImage'])->name('products.images.add');
 
-
     // Report routes
-   // Report routes
     Route::prefix('reports')->name('reports.')->group(function () {
-    Route::get('/stock', [ReportController::class, 'stockReport'])->name('stock');
-    Route::get('/stock-logs', [ReportController::class, 'stockLogsReport'])->name('stock-logs'); // Add this line
-});
-});
+        Route::get('/stock', [ReportController::class, 'stockReport'])->name('stock');
+        Route::get('/stock-logs', [ReportController::class, 'stockLogsReport'])->name('stock-logs');
+    });
 
 
+
+
+});
+
+// Test routes (keep as is)
 Route::get('/test-product/{id}', function ($id) {
     $product = App\Models\Product::find($id);
 
@@ -211,6 +221,46 @@ Route::get('/test-product/{id}', function ($id) {
     }
 
     return response()->json($enhanced);
+});
+
+Route::get('/debug-ors', function () {
+    $apiKey = env('OPENROUTE_API_KEY');
+
+    $results = [
+        'api_key_exists' => !empty($apiKey),
+        'api_key_prefix' => !empty($apiKey) ? substr($apiKey, 0, 10) . '...' : 'none',
+    ];
+
+    if (!empty($apiKey)) {
+        try {
+            $response = Illuminate\Support\Facades\Http::withHeaders([
+                'Authorization' => $apiKey,
+                'Content-Type' => 'application/json',
+            ])->post('https://api.openrouteservice.org/v2/directions/driving-car/geojson', [
+                'coordinates' => [
+                    [124.57058152076657, 8.532339288654399],
+                    [124.6, 8.5]
+                ]
+            ]);
+
+            $results['api_call_status'] = $response->status();
+            $results['api_call_success'] = $response->successful();
+
+            if ($response->successful()) {
+                $data = $response->json();
+                $results['has_route'] = isset($data['features'][0]);
+                $results['coordinates_count'] = isset($data['features'][0]['geometry']['coordinates'])
+                    ? count($data['features'][0]['geometry']['coordinates'])
+                    : 0;
+            } else {
+                $results['error_body'] = $response->body();
+            }
+        } catch (\Exception $e) {
+            $results['exception'] = $e->getMessage();
+        }
+    }
+
+    return response()->json($results);
 });
 
 require __DIR__.'/auth.php';

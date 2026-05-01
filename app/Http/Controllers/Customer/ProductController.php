@@ -11,9 +11,9 @@ use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
-   public function index(Request $request)
+public function index(Request $request)
 {
-    $products = Product::with(['images', 'inventory', 'sizes', 'category'])
+    $products = Product::with(['images', 'inventory', 'sizes', 'category', 'availableCustomizationOptions.material'])
         ->whereHas('inventory', function($query) {
             $query->where('stock', '>', 0);
         })
@@ -34,41 +34,42 @@ class ProductController extends Controller
         ->latest()
         ->paginate(12)
         ->through(function ($product) {
-            // Load customization images for each product
+            // Get customization images
             $customizationImages = DB::table('product_customization_images')
                 ->where('product_id', $product->id)
                 ->get()
                 ->keyBy('customization_option_id');
 
-            $customizations = $product->customizations;
-            if (is_string($customizations)) {
-                $customizations = json_decode($customizations, true);
-            }
+            // Build available customizations from relationship only
+            $availableCustomizations = [];
 
-            if ($customizations) {
-                $enhancedCustomizations = [];
-                foreach ($customizations as $categoryId => $options) {
-                    $enhancedCustomizations[$categoryId] = [];
-                    foreach ($options as $option) {
-                        $enhancedOption = [
-                            'id' => $option['id'],
-                            'name' => $option['name'],
-                            'price_modifier' => $option['price_modifier'],
-                            'selected' => $option['selected'] ?? false,
-                        ];
-
-                        if (isset($customizationImages[$option['id']])) {
-                            $enhancedOption['preview_image_url'] = asset('storage/' . $customizationImages[$option['id']]->image_path);
-                        }
-
-                        $enhancedCustomizations[$categoryId][] = $enhancedOption;
-                    }
+            foreach ($product->availableCustomizationOptions as $option) {
+                $categoryId = $option->category_id;
+                if (!isset($availableCustomizations[$categoryId])) {
+                    $availableCustomizations[$categoryId] = [];
                 }
-                $product->customizations = $enhancedCustomizations;
-            }
-            $product->customization_options = $product->customizations ?? [];
 
-            return $product;
+                $optionData = [
+                    'id' => $option->id,
+                    'name' => $option->name,
+                    'price_modifier' => $option->price_modifier,
+                    'selected' => false,
+                    'color_code' => $option->color_code,
+                ];
+
+                if (isset($customizationImages[$option->id])) {
+                    $optionData['preview_image_url'] = asset('storage/' . $customizationImages[$option->id]->image_path);
+                }
+
+                $availableCustomizations[$categoryId][] = $optionData;
+            }
+           \Log::info('Product ID: ' . $product->id);
+    \Log::info('Customizations sent: ' . json_encode($availableCustomizations));
+
+    $product->setAttribute('customizations', $availableCustomizations);
+    $product->setAttribute('customization_options', $availableCustomizations);
+
+    return $product;
         });
 
     $categories = Category::where('is_active', true)->orderBy('sort_order')->get();
@@ -82,63 +83,49 @@ class ProductController extends Controller
 
 
 
-    public function show(Product $product)
-    {
-        // Load basic product data
-        $product->load(['images', 'inventory', 'sizes', 'category']);
+public function show(Product $product)
+{
+    $product->load(['images', 'inventory', 'sizes', 'category', 'availableCustomizationOptions.material']);
 
-        // Get customization images for this product
-        $customizationImages = DB::table('product_customization_images')
-            ->where('product_id', $product->id)
-            ->get()
-            ->keyBy('customization_option_id');
+    // Get customization images for this product
+    $customizationImages = DB::table('product_customization_images')
+        ->where('product_id', $product->id)
+        ->get()
+        ->keyBy('customization_option_id');
 
-        // Get customizations - decode if it's a string
-        $customizations = $product->customizations;
-
-        if (is_string($customizations)) {
-            $customizations = json_decode($customizations, true);
+    // Build available customizations (NOT pre-selected)
+    $availableCustomizations = [];
+    foreach ($product->availableCustomizationOptions as $option) {
+        $categoryId = $option->category_id;
+        if (!isset($availableCustomizations[$categoryId])) {
+            $availableCustomizations[$categoryId] = [];
         }
 
-        if (!$customizations) {
-            $customizations = [];
+        $optionData = [
+            'id' => $option->id,
+            'name' => $option->name,
+            'price_modifier' => $option->price_modifier,
+            'selected' => false, // IMPORTANT: Customer hasn't selected anything
+            'color_code' => $option->color_code,
+        ];
+
+        if (isset($customizationImages[$option->id])) {
+            $optionData['preview_image_url'] = asset('storage/' . $customizationImages[$option->id]->image_path);
         }
 
-        // Build enhanced customizations with image URLs
-        $enhancedCustomizations = [];
-
-        foreach ($customizations as $categoryId => $options) {
-            $enhancedCustomizations[$categoryId] = [];
-            foreach ($options as $option) {
-                $optionId = $option['id'];
-
-                $enhancedOption = [
-                    'id' => $optionId,
-                    'name' => $option['name'],
-                    'price_modifier' => $option['price_modifier'],
-                    'selected' => $option['selected'] ?? false,
-                ];
-
-                // Add image URL if exists
-                if (isset($customizationImages[$optionId])) {
-                    $imagePath = $customizationImages[$optionId]->image_path;
-                    $enhancedOption['preview_image_url'] = asset('storage/' . $imagePath);
-                }
-
-                $enhancedCustomizations[$categoryId][] = $enhancedOption;
-            }
+        if ($option->material) {
+            $optionData['material_stock'] = $option->material->stock;
+            $optionData['quantity_used'] = $option->quantity_used;
         }
 
-        // Set the enhanced customizations
-        $product->customizations = $enhancedCustomizations;
-        $product->customization_options = $enhancedCustomizations;
-
-        // DEBUG: Log to file to verify
-        file_put_contents(storage_path('logs/debug.txt'), "Product ID: {$product->id}\n", FILE_APPEND);
-        file_put_contents(storage_path('logs/debug.txt'), "Customizations: " . json_encode($enhancedCustomizations) . "\n\n", FILE_APPEND);
-
-        return Inertia::render('Customer/Products/Show', [
-            'product' => $product
-        ]);
+        $availableCustomizations[$categoryId][] = $optionData;
     }
+
+    $product->customizations = $availableCustomizations;
+    $product->customization_options = $availableCustomizations;
+
+    return Inertia::render('Customer/Products/Show', [
+        'product' => $product
+    ]);
+}
 }

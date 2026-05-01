@@ -18,7 +18,7 @@ protected $fillable = [
     'shipping_cost',
     'status',
     'payment_method',
-    'payment_status',  // MAKE SURE THIS IS HERE
+    'payment_status',
     'down_payment_percentage',
     'down_payment_amount',
     'remaining_balance',
@@ -26,14 +26,20 @@ protected $fillable = [
     'paymongo_payment_id',
     'paymongo_checkout_url',
     'payment_expires_at',
+    'receiver_latitude',    // ADD THIS
+    'receiver_longitude',   // ADD THIS
+    'receiver_city',        // ADD THIS
+    'receiver_barangay',    // ADD THIS
 ];
 
-    protected $casts = [
+protected $casts = [
     'total_price' => 'decimal:2',
     'shipping_cost' => 'decimal:2',
     'down_payment_amount' => 'decimal:2',
     'remaining_balance' => 'decimal:2',
     'shipping_address' => 'array',
+    'receiver_latitude' => 'decimal:8',
+    'receiver_longitude' => 'decimal:8',
 ];
 
     public function user()

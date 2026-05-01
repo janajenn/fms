@@ -1,11 +1,14 @@
-import { Link, usePage } from '@inertiajs/react';
-import { useState, useEffect } from 'react';
+import { Link, usePage, router } from '@inertiajs/react';
+import { useState, useEffect, useRef } from 'react';
 import { ConfirmDialog } from 'primereact/confirmdialog';
 import axios from 'axios';
+import NotificationDropdown from '@/Components/NotificationDropdown';
 
 export default function AdminLayout({ children }) {
-    const { auth } = usePage().props;
+    const { auth, cartCount: initialCartCount } = usePage().props;
     const user = auth?.user;
+    const notifications = auth?.notifications || [];
+    const unreadCount = auth?.unread_count || 0;
     const [sidebarOpen, setSidebarOpen] = useState(true);
     const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
 
@@ -28,6 +31,15 @@ export default function AdminLayout({ children }) {
             return () => clearInterval(interval);
         }
     }, [user]);
+
+    // Auto-refresh notifications every 30 seconds
+    useEffect(() => {
+        const interval = setInterval(() => {
+            router.reload({ only: ['auth'] });
+        }, 30000);
+
+        return () => clearInterval(interval);
+    }, []);
 
     // Define navigation groups
     const navigationGroups = [
@@ -93,7 +105,7 @@ export default function AdminLayout({ children }) {
 
     return (
         <div className="min-h-screen bg-black">
-            {/* Sidebar - Optimized for more items */}
+            {/* Sidebar */}
             <div className={`fixed inset-y-0 left-0 z-30 w-64 bg-black border-r border-stone-800 transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-300 ease-in-out`}>
                 <div className="flex items-center justify-between p-3 border-b border-stone-800">
                     <Link href="/admin/dashboard" className="flex items-center space-x-2">
@@ -112,14 +124,12 @@ export default function AdminLayout({ children }) {
                 <nav className="mt-3 px-2 overflow-y-auto h-[calc(100vh-8rem)]">
                     {navigationGroups.map((group, groupIndex) => (
                         <div key={group.title} className="mb-4">
-                            {/* Section Header - Smaller and tighter */}
                             <div className="px-2 mb-1.5">
                                 <h3 className="text-[10px] font-semibold text-stone-500 uppercase tracking-wider">
                                     {group.title}
                                 </h3>
                             </div>
 
-                            {/* Navigation Items - Smaller font, tighter spacing */}
                             {group.items.map((item) => (
                                 <Link
                                     key={item.name}
@@ -140,7 +150,6 @@ export default function AdminLayout({ children }) {
                                 </Link>
                             ))}
 
-                            {/* Divider between groups - Thinner */}
                             {groupIndex < navigationGroups.length - 1 && (
                                 <div className="my-2 border-t border-stone-800"></div>
                             )}
@@ -148,7 +157,6 @@ export default function AdminLayout({ children }) {
                     ))}
                 </nav>
 
-                {/* User section - Compact */}
                 <div className="absolute bottom-0 w-full border-t border-stone-800 p-3 bg-black">
                     <div className="flex items-center justify-between">
                         <div className="flex-1 min-w-0">
@@ -180,20 +188,14 @@ export default function AdminLayout({ children }) {
                                 </button>
                             </div>
                             <div className="flex items-center space-x-4">
-                                {/* Notification bell for delivery requests */}
-                                {pendingRequestsCount > 0 && (
-                                    <Link
-                                        href="/admin/delivery-requests"
-                                        className="relative text-stone-400 hover:text-amber-500 transition-colors"
-                                    >
-                                        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                                        </svg>
-                                        <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                                            {pendingRequestsCount > 9 ? '9+' : pendingRequestsCount}
-                                        </span>
-                                    </Link>
-                                )}
+                                {/* Notification Bell */}
+                                <NotificationDropdown
+                                    notifications={notifications}
+                                    unreadCount={unreadCount}
+                                    userType="admin"
+                                />
+
+
                                 <span className="text-xs text-stone-400">Welcome, {user.name}</span>
                             </div>
                         </div>
@@ -205,7 +207,6 @@ export default function AdminLayout({ children }) {
                 </main>
             </div>
 
-            {/* Standard ConfirmDialog */}
             <ConfirmDialog />
         </div>
     );

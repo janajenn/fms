@@ -45,6 +45,23 @@ class HandleInertiaRequests extends Middleware
             }
         }
 
+        // Get notifications for authenticated user
+        $notifications = [];
+        $unreadCount = 0;
+
+        if (Auth::check()) {
+            $user = Auth::user();
+            $notifications = $user->notifications()->latest()->take(20)->get()->map(function ($notification) {
+                return [
+                    'id' => $notification->id,
+                    'data' => $notification->data,
+                    'read_at' => $notification->read_at,
+                    'created_at' => $notification->created_at,
+                ];
+            });
+            $unreadCount = $user->unreadNotifications->count();
+        }
+
         return array_merge(parent::share($request), [
             'auth' => [
                 'user' => $request->user() ? [
@@ -53,6 +70,8 @@ class HandleInertiaRequests extends Middleware
                     'email' => $request->user()->email,
                     'is_admin' => $request->user()->is_admin,
                 ] : null,
+                'notifications' => $notifications,
+                'unread_count' => $unreadCount,
             ],
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),

@@ -94,3 +94,19 @@
     ring: 2px solid #f59e0b;
     ring-offset: 2px;
 }
+
+
+
+/* Prevent Leaflet map from overlapping other content */
+.leaflet-container {
+    z-index: 1 !important;
+}
+
+.leaflet-popup {
+    z-index: 2 !important;
+}
+
+/* Ensure the map doesn't cause scroll issues */
+#checkout-delivery-map {
+    overflow: hidden;
+}
