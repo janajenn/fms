@@ -14,8 +14,12 @@ class ProductController extends Controller
 public function index(Request $request)
 {
     $products = Product::with(['images', 'inventory', 'sizes', 'category', 'availableCustomizationOptions.material'])
-        ->whereHas('inventory', function($query) {
-            $query->where('stock', '>', 0);
+        ->where(function ($query) {
+            $query->whereHas('inventory', function ($q) {
+                $q->where('stock', '>', 0);
+            })->orWhereHas('sizes', function ($q) {
+                $q->where('stock', '>', 0);
+            });
         })
         ->when($request->category, function($query, $category) {
             $query->whereHas('category', function($q) use ($category) {
@@ -34,13 +38,12 @@ public function index(Request $request)
         ->latest()
         ->paginate(12)
         ->through(function ($product) {
-            // Get customization images
+            // Get customization images (optional)
             $customizationImages = DB::table('product_customization_images')
                 ->where('product_id', $product->id)
                 ->get()
                 ->keyBy('customization_option_id');
 
-            // Build available customizations from relationship only
             $availableCustomizations = [];
 
             foreach ($product->availableCustomizationOptions as $option) {
@@ -63,13 +66,12 @@ public function index(Request $request)
 
                 $availableCustomizations[$categoryId][] = $optionData;
             }
-           \Log::info('Product ID: ' . $product->id);
-    \Log::info('Customizations sent: ' . json_encode($availableCustomizations));
 
-    $product->setAttribute('customizations', $availableCustomizations);
-    $product->setAttribute('customization_options', $availableCustomizations);
+            // Attach customizations attribute
+            $product->setAttribute('customizations', $availableCustomizations);
+            $product->setAttribute('customization_options', $availableCustomizations);
 
-    return $product;
+            return $product;
         });
 
     $categories = Category::where('is_active', true)->orderBy('sort_order')->get();

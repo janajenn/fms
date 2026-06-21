@@ -12,7 +12,7 @@ export default function Index({ zones }) {
     const [modalOpen, setModalOpen] = useState(false);
     const [selectedZone, setSelectedZone] = useState(null);
     const [selectedZoneId, setSelectedZoneId] = useState(null);
-    const [expandedZones, setExpandedZones] = useState({}); // Track expanded/collapsed state
+    const [expandedZones, setExpandedZones] = useState({});
     const [mapLocationModal, setMapLocationModal] = useState(false);
     const [pendingLocation, setPendingLocation] = useState(null);
     const [formData, setFormData] = useState({
@@ -35,11 +35,25 @@ export default function Index({ zones }) {
     const [searchResults, setSearchResults] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
 
-    const toggleZoneExpand = (zoneId) => {
+    const toggleZoneExpand = (zoneId, e) => {
+        e.stopPropagation();
         setExpandedZones(prev => ({
             ...prev,
             [zoneId]: !prev[zoneId]
         }));
+    };
+
+    const handleZoneClick = (zoneId) => {
+        // If the clicked zone is already selected, deselect it
+        if (selectedZoneId === zoneId) {
+            setSelectedZoneId(null);
+        } else {
+            setSelectedZoneId(zoneId);
+        }
+    };
+
+    const clearSelection = () => {
+        setSelectedZoneId(null);
     };
 
     const openCreateModal = () => {
@@ -54,7 +68,8 @@ export default function Index({ zones }) {
         setModalOpen(true);
     };
 
-    const openEditModal = (zone) => {
+    const openEditModal = (zone, e) => {
+        e.stopPropagation();
         setSelectedZone(zone);
         setFormData({
             name: zone.name,
@@ -103,7 +118,8 @@ export default function Index({ zones }) {
         }
     };
 
-    const handleDeleteZone = (zone) => {
+    const handleDeleteZone = (zone, e) => {
+        e.stopPropagation();
         confirmDialog({
             header: 'Delete Delivery Zone',
             message: `Are you sure you want to delete "${zone.name}"? This will also remove all locations in this zone.`,
@@ -143,7 +159,8 @@ export default function Index({ zones }) {
         });
     };
 
-    const toggleZoneStatus = (zone) => {
+    const toggleZoneStatus = (zone, e) => {
+        e.stopPropagation();
         router.put(route('admin.delivery-zones.update', zone.id), {
             ...zone,
             is_active: !zone.is_active,
@@ -173,14 +190,11 @@ export default function Index({ zones }) {
             showToast('error', 'Error', 'Location name is required');
             return;
         }
-
         if (!selectedZoneId) {
             showToast('error', 'Error', 'Please select a zone first');
             return;
         }
-
         setIsSubmitting(true);
-
         router.post(route('admin.delivery-zones.add-location-coordinates', selectedZoneId), locationForm, {
             preserveScroll: true,
             onSuccess: () => {
@@ -244,7 +258,6 @@ export default function Index({ zones }) {
     return (
         <AdminLayout>
             <Head title="Delivery Zones" />
-
             <div className="py-6">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between items-center mb-6">
@@ -266,17 +279,19 @@ export default function Index({ zones }) {
                             {zones.map((zone) => (
                                 <div
                                     key={zone.id}
-                                    className={`bg-black border rounded-lg overflow-hidden transition-all ${
-                                        selectedZoneId === zone.id ? 'border-amber-500 ring-1 ring-amber-500' : 'border-stone-800'
+                                    className={`bg-black border rounded-lg overflow-hidden transition-all cursor-pointer ${
+                                        selectedZoneId === zone.id
+                                            ? 'border-amber-500 ring-2 ring-amber-500/50'
+                                            : 'border-stone-800 hover:border-stone-600'
                                     }`}
+                                    onClick={() => handleZoneClick(zone.id)}
                                 >
                                     {/* Zone Header */}
                                     <div className="px-4 py-3 bg-stone-900 border-b border-stone-800">
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-3 flex-wrap">
-                                                {/* Expand/Collapse Button */}
                                                 <button
-                                                    onClick={() => toggleZoneExpand(zone.id)}
+                                                    onClick={(e) => toggleZoneExpand(zone.id, e)}
                                                     className="p-0.5 text-stone-400 hover:text-amber-500 transition-colors"
                                                     title={expandedZones[zone.id] ? 'Collapse' : 'Expand'}
                                                 >
@@ -289,12 +304,7 @@ export default function Index({ zones }) {
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                                                     </svg>
                                                 </button>
-
-                                                {/* Zone Info - Click to select for map adding */}
-                                                <div
-                                                    className="flex items-center gap-3 flex-wrap cursor-pointer"
-                                                    onClick={() => setSelectedZoneId(zone.id)}
-                                                >
+                                                <div className="flex items-center gap-3 flex-wrap">
                                                     <h3 className="text-white font-medium">{zone.name}</h3>
                                                     <span className={`px-2 py-0.5 text-xs rounded-full ${zone.is_active ? 'bg-emerald-900/30 text-emerald-400' : 'bg-red-900/30 text-red-400'}`}>
                                                         {zone.is_active ? 'Active' : 'Inactive'}
@@ -304,7 +314,7 @@ export default function Index({ zones }) {
                                             </div>
                                             <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                                                 <button
-                                                    onClick={() => toggleZoneStatus(zone)}
+                                                    onClick={(e) => toggleZoneStatus(zone, e)}
                                                     className="p-1 text-stone-400 hover:text-amber-500 transition-colors"
                                                     title={zone.is_active ? 'Deactivate' : 'Activate'}
                                                 >
@@ -313,8 +323,8 @@ export default function Index({ zones }) {
                                                     </svg>
                                                 </button>
                                                 <ActionButtons
-                                                    onEdit={() => openEditModal(zone)}
-                                                    onDelete={() => handleDeleteZone(zone)}
+                                                    onEdit={(e) => openEditModal(zone, e)}
+                                                    onDelete={(e) => handleDeleteZone(zone, e)}
                                                     showEdit={true}
                                                     showDelete={true}
                                                     showView={false}
@@ -327,12 +337,18 @@ export default function Index({ zones }) {
                                             <p className="text-xs text-stone-400 mt-2 ml-5">{zone.description}</p>
                                         )}
                                         {selectedZoneId === zone.id && (
-                                            <div className="text-xs text-amber-500 mt-2 ml-5">
-                                                ✓ Currently selected - click map to add locations to this zone
+                                            <div className="flex items-center justify-between mt-2 ml-5">
+                                                <div className="text-xs text-amber-500">
+                                                    ✓ Currently selected – click map to add locations
+                                                </div>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); clearSelection(); }}
+                                                    className="text-xs text-stone-400 hover:text-white underline"
+                                                >
+                                                    Clear selection
+                                                </button>
                                             </div>
                                         )}
-
-                                        {/* Locations Count Badge */}
                                         <div className="mt-2 ml-5">
                                             <span className="text-[10px] text-stone-500 bg-stone-800 px-2 py-0.5 rounded-full">
                                                 {zone.locations?.length || 0} locations
@@ -345,7 +361,7 @@ export default function Index({ zones }) {
                                         </div>
                                     </div>
 
-                                    {/* Locations List - Collapsible Section */}
+                                    {/* Locations List */}
                                     {expandedZones[zone.id] && (
                                         <div className="p-3">
                                             <div className="flex justify-between items-center mb-2">
@@ -356,14 +372,12 @@ export default function Index({ zones }) {
                                                     <span className="text-[10px] text-amber-500">Click map to add</span>
                                                 )}
                                             </div>
-
                                             {zone.locations && zone.locations.length > 0 ? (
                                                 <div className="space-y-1.5 max-h-64 overflow-y-auto">
                                                     {zone.locations.map((loc) => {
                                                         const lat = loc.latitude ? parseFloat(loc.latitude) : null;
                                                         const lng = loc.longitude ? parseFloat(loc.longitude) : null;
                                                         const hasValidCoordinates = lat !== null && !isNaN(lat) && lng !== null && !isNaN(lng);
-
                                                         return (
                                                             <div key={loc.id} className="flex items-center justify-between bg-stone-800/50 rounded-md px-2 py-1.5 hover:bg-stone-800 transition-colors">
                                                                 <div className="flex-1 min-w-0">
@@ -408,7 +422,6 @@ export default function Index({ zones }) {
                                     )}
                                 </div>
                             ))}
-
                             {zones.length === 0 && (
                                 <div className="bg-black border border-stone-800 rounded-lg p-8 text-center">
                                     <p className="text-stone-400">No delivery zones yet.</p>

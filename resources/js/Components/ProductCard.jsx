@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Link } from '@inertiajs/react';
 import QuickViewModal from './QuickViewModal';
 
-
 export default function ProductCard({ product, viewMode = 'grid' }) {
     const [isHovered, setIsHovered] = useState(false);
     const [imageLoaded, setImageLoaded] = useState(false);
@@ -11,86 +10,109 @@ export default function ProductCard({ product, viewMode = 'grid' }) {
     const imageUrl = product.first_image_url || (product.images && product.images[0] ? `/storage/${product.images[0].image_path}` : null);
     const isInStock = product.inventory?.stock > 0 || (product.sizes && product.sizes.some(s => s.stock > 0));
 
+    // Helper to get category name from first customization option (if available)
+    const getCategoryName = (options) => {
+        if (options && options.length > 0 && options[0].category_name) {
+            return options[0].category_name;
+        }
+        return 'Options';
+    };
 
-    // Add this right before the return statement
-console.log('ProductCard - product.customizations:', product.customizations);
-console.log('ProductCard - product:', product);
     if (viewMode === 'list') {
         return (
             <>
                 <div className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden border border-stone-100">
                     <Link href={`/products/${product.id}`} className="flex flex-col sm:flex-row">
-                    <div className="sm:w-48 h-48 bg-stone-100 relative overflow-hidden">
-                        {imageUrl ? (
-                            <img
-                                src={imageUrl}
-                                alt={product.name}
-                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                                loading="lazy"
-                            />
-                        ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-stone-100">
-                                <svg className="w-12 h-12 text-stone-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                </svg>
+                        <div className="sm:w-48 h-48 bg-stone-100 relative overflow-hidden">
+                            {imageUrl ? (
+                                <img
+                                    src={imageUrl}
+                                    alt={product.name}
+                                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                                    loading="lazy"
+                                />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-stone-100">
+                                    <svg className="w-12 h-12 text-stone-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    </svg>
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex-1 p-6">
+                            <div className="flex items-start justify-between">
+                                <div>
+                                    <h3 className="text-xl font-semibold text-stone-800 hover:text-amber-600 transition-colors">
+                                        {product.name}
+                                    </h3>
+                                    {product.category && (
+                                        <p className="text-sm text-stone-500 mt-1">{product.category.name}</p>
+                                    )}
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-2xl font-bold text-amber-600">₱{product.base_price}</p>
+                                    {product.sizes && product.sizes.length > 0 && (
+                                        <p className="text-xs text-stone-400 mt-1">{product.sizes.length} sizes available</p>
+                                    )}
+                                </div>
                             </div>
-                        )}
-                    </div>
-                    <div className="flex-1 p-6">
-                        <div className="flex items-start justify-between">
-                            <div>
-                                <h3 className="text-xl font-semibold text-stone-800 hover:text-amber-600 transition-colors">
-                                    {product.name}
-                                </h3>
-                                {product.category && (
-                                    <p className="text-sm text-stone-500 mt-1">{product.category.name}</p>
-                                )}
-                            </div>
-                            <div className="text-right">
-                                <p className="text-2xl font-bold text-amber-600">₱{product.base_price}</p>
-                                {product.sizes && product.sizes.length > 0 && (
-                                    <p className="text-xs text-stone-400 mt-1">{product.sizes.length} sizes available</p>
-                                )}
+                            {product.description && (
+                                <p className="text-stone-600 mt-3 line-clamp-2">{product.description}</p>
+                            )}
+
+                            {/* Customizations (colors, finishes, etc.) */}
+                            {product.customizations && Object.keys(product.customizations).length > 0 && (
+                                <div className="mt-3 space-y-1">
+                                    {Object.entries(product.customizations).map(([catId, options]) => (
+                                        <div key={catId} className="flex flex-wrap items-center gap-1">
+                                            <span className="text-xs font-medium text-stone-500">{getCategoryName(options)}:</span>
+                                            <div className="flex flex-wrap gap-1">
+                                                {options.slice(0, 3).map(opt => (
+                                                    <span key={opt.id} className="inline-block px-2 py-0.5 text-xs bg-stone-100 rounded-full text-stone-600">
+                                                        {opt.name}
+                                                        {opt.price_modifier > 0 && ` (+₱${opt.price_modifier})`}
+                                                    </span>
+                                                ))}
+                                                {options.length > 3 && (
+                                                    <span className="text-xs text-stone-400">+{options.length - 3}</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            <div className="mt-4 flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    {isInStock ? (
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                                            In Stock
+                                        </span>
+                                    ) : (
+                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                                            Out of Stock
+                                        </span>
+                                    )}
+                                    {product.sizes && product.sizes.length > 0 && (
+                                        <span className="text-xs text-stone-400">
+                                            {product.sizes.reduce((sum, s) => sum + s.stock, 0)} units available
+                                        </span>
+                                    )}
+                                </div>
+                                <Link
+                                    href={`/products/${product.id}`}
+                                    className="inline-flex items-center text-amber-600 hover:text-amber-700 font-medium"
+                                >
+                                    View Details
+                                    <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                    </svg>
+                                </Link>
                             </div>
                         </div>
-                        {product.description && (
-                            <p className="text-stone-600 mt-3 line-clamp-2">{product.description}</p>
-                        )}
-                        <div className="mt-4 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                {isInStock ? (
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-                                        In Stock
-                                    </span>
-                                ) : (
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                        Out of Stock
-                                    </span>
-                                )}
-                                {product.sizes && product.sizes.length > 0 && (
-                                    <span className="text-xs text-stone-400">
-                                        {product.sizes.reduce((sum, s) => sum + s.stock, 0)} units available
-                                    </span>
-                                )}
-                            </div>
-                            <Link
-                                href={`/products/${product.id}`}
-                                className="inline-flex items-center text-amber-600 hover:text-amber-700 font-medium"
-                            >
-                                View Details
-                                <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                </svg>
-                            </Link>
-                        </div>
-                    </div>
-                </Link>
-            </div>
-            <QuickViewModal
-                    product={product}
-                    isOpen={quickViewOpen}
-                    onClose={() => setQuickViewOpen(false)}
-                />
+                    </Link>
+                </div>
+                <QuickViewModal product={product} isOpen={quickViewOpen} onClose={() => setQuickViewOpen(false)} />
             </>
         );
     }
@@ -127,16 +149,12 @@ console.log('ProductCard - product:', product);
                         </div>
                     )}
 
-                    {/* Badges */}
                     <div className="absolute top-3 left-3 flex flex-col gap-2">
                         {product.is_new && (
-                            <span className="px-2 py-1 text-xs font-semibold bg-amber-500 text-white rounded">
-                                New
-                            </span>
+                            <span className="px-2 py-1 text-xs font-semibold bg-amber-500 text-white rounded">New</span>
                         )}
                     </div>
 
-                    {/* Quick View Overlay */}
                     <div className={`absolute inset-0 bg-black/60 flex items-center justify-center transition-opacity duration-300 ${
                         isHovered ? 'opacity-100' : 'opacity-0'
                     }`}>
@@ -153,33 +171,48 @@ console.log('ProductCard - product:', product);
                     </div>
                 </div>
 
-                {/* Content */}
                 <div className="p-5">
-                    {/* Category */}
                     {product.category && (
                         <p className="text-xs text-amber-600 uppercase tracking-wider mb-2">
                             {product.category.name}
                         </p>
                     )}
 
-                    {/* Title */}
                     <h3 className="text-lg font-semibold text-stone-800 group-hover:text-amber-600 transition-colors line-clamp-2">
                         {product.name}
                     </h3>
 
-                    {/* Description */}
                     {product.description && (
                         <p className="text-stone-500 text-sm mt-2 line-clamp-2">
                             {product.description}
                         </p>
                     )}
 
-                    {/* Price and Stock */}
+                    {/* Display customizations (colors, finishes, wood types) */}
+                    {product.customizations && Object.keys(product.customizations).length > 0 && (
+                        <div className="mt-3 space-y-1.5">
+                            {Object.entries(product.customizations).map(([catId, options]) => (
+                                <div key={catId} className="flex flex-wrap items-center gap-1">
+                                    <span className="text-xs font-medium text-stone-500">{getCategoryName(options)}:</span>
+                                    <div className="flex flex-wrap gap-1">
+                                        {options.slice(0, 3).map(opt => (
+                                            <span key={opt.id} className="inline-block px-2 py-0.5 text-xs bg-stone-100 rounded-full text-stone-600">
+                                                {opt.name}
+                                                {opt.price_modifier > 0 && ` (+₱${opt.price_modifier})`}
+                                            </span>
+                                        ))}
+                                        {options.length > 3 && (
+                                            <span className="text-xs text-stone-400">+{options.length - 3}</span>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
                     <div className="mt-4 flex items-center justify-between">
                         <div>
-                            <p className="text-2xl font-bold text-amber-600">
-                                ₱{product.base_price}
-                            </p>
+                            <p className="text-2xl font-bold text-amber-600">₱{product.base_price}</p>
                             {product.sizes && product.sizes.length > 0 && (
                                 <p className="text-xs text-stone-400 mt-1">
                                     {product.sizes.length} sizes available
@@ -197,7 +230,6 @@ console.log('ProductCard - product:', product);
                         )}
                     </div>
 
-                    {/* Action Buttons */}
                     <div className="mt-4 flex gap-2">
                         <Link
                             href={`/products/${product.id}`}
@@ -217,11 +249,7 @@ console.log('ProductCard - product:', product);
                     </div>
                 </div>
             </div>
-            <QuickViewModal
-                product={product}
-                isOpen={quickViewOpen}
-                onClose={() => setQuickViewOpen(false)}
-            />
+            <QuickViewModal product={product} isOpen={quickViewOpen} onClose={() => setQuickViewOpen(false)} />
         </>
     );
 }

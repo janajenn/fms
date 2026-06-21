@@ -94,53 +94,55 @@ export default function CheckoutDeliveryMap({ zones, selectedCity, onLocationSel
     const [markerBounds, setMarkerBounds] = useState([]);
 
     // Process zones into markers
-    const markers = [];
-    zones.forEach(zone => {
-        const fee = parseFloat(zone.delivery_fee);
-        const color = fee === 0 ? '#10b981' : '#f59e0b';
+    // Process zones into markers
+const markers = [];
+zones.forEach(zone => {
+    const fee = parseFloat(zone.delivery_fee);
+    const color = fee === 0 ? '#10b981' : '#f59e0b';
 
-        if (zone.locations && zone.locations.length > 0) {
-            zone.locations.forEach(location => {
-                if (location.latitude && location.longitude) {
-                    const lat = parseFloat(location.latitude);
-                    const lng = parseFloat(location.longitude);
+    if (zone.locations && zone.locations.length > 0) {
+        zone.locations.forEach(location => {
+            if (location.latitude && location.longitude) {
+                const lat = parseFloat(location.latitude);
+                const lng = parseFloat(location.longitude);
 
-                    if (!isNaN(lat) && !isNaN(lng)) {
-                        // FIX: Get the city from the location or use the zone name as city
-                        // For barangay-level locations, the city might be the zone name or parent city
-                        let city = location.city || zone.city || '';
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    let city = '';
+                    let barangay = '';
 
-                        // If still no city, try to use the zone name as city (if it's a city name)
-                        if (!city && zone.name && !zone.name.toLowerCase().includes('zone')) {
-                            city = zone.name;
-                        }
-
-                        // For barangay-type locations, we might need to derive city from the location name
-                        // For example, "Luyongbonbon" is a barangay, its city might be "Opol" or "Iligan"
-                        if (!city && location.location_type === 'barangay') {
-                            // Try to extract city from zone name or use a default
-                            city = zone.name.replace(' ZONE', '').replace('ZONE', '').trim();
-                        }
-
-                        console.log('Marker city:', city, 'for location:', location.location_name, 'type:', location.location_type);
-
-                        markers.push({
-                            id: `${zone.id}_${location.id}`,
-                            lat,
-                            lng,
-                            name: location.location_name,
-                            zoneName: zone.name,
-                            fee,
-                            color,
-                            city: city,
-                            barangay: location.barangay || location.location_name || '',
-                            locationType: location.location_type || 'barangay'
-                        });
+                    // Determine city and barangay based on location type
+                    if (location.location_type === 'city') {
+                        // For city-level location, city name is the location name itself
+                        city = location.location_name;
+                        barangay = ''; // no barangay
+                    } else if (location.location_type === 'barangay') {
+                        // For barangay, city is parent_city, barangay is location name
+                        city = location.parent_city || '';
+                        barangay = location.location_name;
                     }
+
+                    // Fallback: if city is still empty, try using zone name (but remove "Zone" etc.)
+                    if (!city && zone.name) {
+                        city = zone.name.replace(/zone/i, '').trim();
+                    }
+
+                    markers.push({
+                        id: `${zone.id}_${location.id}`,
+                        lat,
+                        lng,
+                        name: location.location_name,
+                        zoneName: zone.name,
+                        fee,
+                        color,
+                        city,
+                        barangay,
+                        locationType: location.location_type
+                    });
                 }
-            });
-        }
-    });
+            }
+        });
+    }
+});
 
     // Update bounds when markers change
     useEffect(() => {
@@ -148,30 +150,17 @@ export default function CheckoutDeliveryMap({ zones, selectedCity, onLocationSel
         setMarkerBounds(bounds);
     }, [zones]);
 
-    const handleMarkerClick = (marker) => {
-        console.log('Marker clicked:', marker);
-
-        // IMPORTANT: For barangay locations, we need to send both the barangay and try to derive the city
-        let cityToSend = marker.city;
-        let barangayToSend = marker.barangay;
-
-        // If city is empty but this is a barangay, use the barangay as both city and barangay
-        // This ensures the validation can find it either way
-        if (!cityToSend && marker.locationType === 'barangay') {
-            cityToSend = marker.name; // Use the location name as city
-            barangayToSend = marker.name; // Also as barangay
-        }
-
-        if (onLocationSelect) {
-            onLocationSelect({
-                city: cityToSend,
-                barangay: barangayToSend,
-                lat: marker.lat,
-                lng: marker.lng,
-                locationName: marker.name
-            });
-        }
-    };
+   const handleMarkerClick = (marker) => {
+    if (onLocationSelect) {
+        onLocationSelect({
+            city: marker.city,
+            barangay: marker.barangay,
+            lat: marker.lat,
+            lng: marker.lng,
+            locationName: marker.name
+        });
+    }
+};
 
     return (
         <div className="space-y-3" style={{ position: 'relative', zIndex: 1 }}>

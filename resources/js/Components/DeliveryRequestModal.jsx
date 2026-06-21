@@ -1,11 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Dialog } from 'primereact/dialog';
 import { useToast } from '@/Contexts/ToastContext';
 import axios from 'axios';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+
+// Fix Leaflet icon issue (same as in other components)
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
 export default function DeliveryRequestModal({ visible, onClose, city, barangay, onRequestSubmitted }) {
     const { showToast } = useToast();
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const mapRef = useRef(null);
+    const markerRef = useRef(null);
+    const [selectedLocation, setSelectedLocation] = useState({ lat: null, lng: null });
+
     const [formData, setFormData] = useState({
         customer_name: '',
         customer_email: '',
@@ -14,25 +28,68 @@ export default function DeliveryRequestModal({ visible, onClose, city, barangay,
         requested_barangay: '',
         full_address: '',
         notes: '',
+        latitude: null,
+        longitude: null,
     });
 
-    // Update form data when city/barangay props change
-   // In DeliveryRequestModal, update the useEffect to set the city when visible
-useEffect(() => {
-    if (visible) {
-        setFormData(prev => ({
-            ...prev,
-            requested_city: city || '',
-            requested_barangay: barangay || '',
-            full_address: prev.full_address || (city ? `${city}` : ''),
-        }));
-    }
-}, [visible, city, barangay]);
+    // Initialize map when modal opens
+    useEffect(() => {
+        if (visible && !mapRef.current && document.getElementById('delivery-request-map')) {
+            // Center map on the provided city/barangay (if available), else default to Philippines
+            let defaultLat = 8.5;
+            let defaultLng = 124.5;
+            // Attempt to geocode the provided city/barangay for better map centering (optional)
+            // For simplicity, we'll use a fixed zoom level that covers typical city area.
+
+            const mapInstance = L.map('delivery-request-map').setView([defaultLat, defaultLng], 7);
+
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                subdomains: 'abcd',
+                maxZoom: 19,
+            }).addTo(mapInstance);
+
+            mapInstance.on('click', (e) => {
+                const { lat, lng } = e.latlng;
+                setSelectedLocation({ lat, lng });
+                setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }));
+
+                // Remove previous marker if exists
+                if (markerRef.current) {
+                    mapInstance.removeLayer(markerRef.current);
+                }
+                // Add new marker
+                markerRef.current = L.marker([lat, lng]).addTo(mapInstance);
+            });
+
+            mapRef.current = mapInstance;
+        }
+
+        return () => {
+            if (mapRef.current && !visible) {
+                mapRef.current.remove();
+                mapRef.current = null;
+                markerRef.current = null;
+                setSelectedLocation({ lat: null, lng: null });
+            }
+        };
+    }, [visible]);
+
+    // Pre-fill city/barangay from props when modal opens
+    useEffect(() => {
+        if (visible) {
+            setFormData(prev => ({
+                ...prev,
+                requested_city: city || '',
+                requested_barangay: barangay || '',
+                full_address: prev.full_address || (city ? `${city}` : ''),
+            }));
+        }
+    }, [visible, city, barangay]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        // Validate required fields
         if (!formData.customer_name || !formData.customer_phone || !formData.requested_city || !formData.full_address) {
             showToast('error', 'Error', 'Please fill in all required fields');
             return;
@@ -52,7 +109,6 @@ useEffect(() => {
                 showToast('success', 'Request Submitted', response.data.message);
                 onRequestSubmitted();
                 onClose();
-                // Reset form
                 setFormData({
                     customer_name: '',
                     customer_email: '',
@@ -61,7 +117,10 @@ useEffect(() => {
                     requested_barangay: '',
                     full_address: '',
                     notes: '',
+                    latitude: null,
+                    longitude: null,
                 });
+                setSelectedLocation({ lat: null, lng: null });
             }
         } catch (error) {
             console.error('Request error:', error);
@@ -99,7 +158,7 @@ useEffect(() => {
         <Dialog
             header="🚚 Delivery Unavailable in Your Area Yet"
             visible={visible}
-            style={{ width: '500px' }}
+            style={{ width: '550px' }}
             onHide={onClose}
             footer={footer}
             className="bg-black border border-stone-800 rounded-lg"
@@ -176,6 +235,23 @@ useEffect(() => {
                             placeholder="House/Unit #, Street, Barangay, City"
                             className="w-full rounded-md bg-stone-900 border-stone-700 text-white focus:border-amber-500 focus:ring-amber-500"
                         />
+                    </div>
+
+                    {/* Map for selecting location */}
+                    <div>
+                        <label className="block text-sm font-medium text-stone-400 mb-2">
+                            Pin your exact location on the map (optional but recommended)
+                        </label>
+                        <div
+                            id="delivery-request-map"
+                            style={{ height: '240px', width: '100%', borderRadius: '8px', zIndex: 1 }}
+                            className="rounded-md overflow-hidden border border-stone-700"
+                        />
+                        {selectedLocation.lat && selectedLocation.lng && (
+                            <p className="text-xs text-stone-500 mt-2">
+                                📍 Selected coordinates: {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}
+                            </p>
+                        )}
                     </div>
 
                     <div>

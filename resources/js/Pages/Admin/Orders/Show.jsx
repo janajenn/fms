@@ -19,7 +19,7 @@ export default function Show({ order }) {
 
     const statusOptions = [
         { value: 'pending', label: 'Pending', color: 'yellow' },
-        { value: 'processing', label: 'Processing', color: 'blue' },
+        // { value: 'processing', label: 'Processing', color: 'blue' },
         { value: 'shipped', label: 'Shipped', color: 'indigo' },
         { value: 'completed', label: 'Completed', color: 'emerald' },
         { value: 'cancelled', label: 'Cancelled', color: 'red' },
@@ -61,6 +61,28 @@ export default function Show({ order }) {
 
     const getTax = () => {
         return getSubtotal() * 0.12;
+    };
+
+    const getPaymentMethodLabel = (method) => {
+        const methods = {
+            cod: 'Cash on Delivery',
+            gcash: 'GCash',
+            paymaya: 'PayMaya',
+            bank_transfer: 'Bank Transfer',
+        };
+        return methods[method] || method.toUpperCase();
+    };
+
+    const getPaymentStatusLabel = (status) => {
+        const statuses = {
+            pending: 'Pending',
+            pending_payment: 'Awaiting Payment',
+            pending_downpayment: 'Downpayment Due',
+            paid: 'Paid',
+            failed: 'Failed',
+            refunded: 'Refunded',
+        };
+        return statuses[status] || status;
     };
 
     return (
@@ -107,8 +129,8 @@ export default function Show({ order }) {
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        {/* Order Items - Left Column */}
-                        <div className="lg:col-span-2">
+                        {/* Left Column – Order Items (takes more space) */}
+                        <div className="lg:col-span-2 space-y-6">
                             <div className="bg-black border border-stone-800 rounded-lg overflow-hidden">
                                 <div className="px-6 py-4 bg-stone-900 border-b border-stone-800">
                                     <h2 className="text-lg font-semibold text-white">Order Items</h2>
@@ -128,9 +150,7 @@ export default function Show({ order }) {
                                                 </div>
                                                 <div className="flex-1">
                                                     <h3 className="font-medium text-white">{item.product?.name}</h3>
-                                                    {item.size && (
-                                                        <p className="text-sm text-stone-400">Size: {item.size.size}</p>
-                                                    )}
+                                                    {item.size && <p className="text-sm text-stone-400">Size: {item.size.size}</p>}
                                                     {item.customizations && item.customizations.length > 0 && (
                                                         <div className="text-xs text-stone-500 mt-1">
                                                             Customizations: {item.customizations.map(c => c.value).join(', ')}
@@ -150,15 +170,13 @@ export default function Show({ order }) {
                                     ))}
                                 </div>
                             </div>
-                        </div>
 
-                        {/* Order Summary - Right Column */}
-                        <div className="lg:col-span-1">
-                            <div className="bg-black border border-stone-800 rounded-lg overflow-hidden sticky top-24">
+                            {/* Order Summary – moved to left column to balance */}
+                            <div className="bg-black border border-stone-800 rounded-lg overflow-hidden">
                                 <div className="px-6 py-4 bg-stone-900 border-b border-stone-800">
                                     <h2 className="text-lg font-semibold text-white">Order Summary</h2>
                                 </div>
-                                <div className="p-6 space-y-4">
+                                <div className="p-6 space-y-3">
                                     <div className="flex justify-between text-sm">
                                         <span className="text-stone-400">Subtotal</span>
                                         <span className="text-white">₱{formatCurrency(getSubtotal())}</span>
@@ -168,10 +186,22 @@ export default function Show({ order }) {
                                         <span className="text-white">₱{formatCurrency(order.shipping_cost || 0)}</span>
                                     </div>
                                     <div className="flex justify-between text-sm">
-                                        <span className="text-stone-400">Tax (12%)</span>
+                                        <span className="text-stone-400">Tax (12% VAT)</span>
                                         <span className="text-white">₱{formatCurrency(getTax())}</span>
                                     </div>
-                                    <div className="border-t border-stone-800 pt-4 mt-4">
+                                    {order.down_payment_amount > 0 && order.payment_method === 'cod' && (
+                                        <>
+                                            <div className="flex justify-between text-sm pt-2">
+                                                <span className="text-stone-400">Down Payment (30%)</span>
+                                                <span className="text-emerald-400">₱{formatCurrency(order.down_payment_amount)}</span>
+                                            </div>
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-stone-400">Remaining Balance</span>
+                                                <span className="text-amber-500 font-semibold">₱{formatCurrency(order.remaining_balance)}</span>
+                                            </div>
+                                        </>
+                                    )}
+                                    <div className="border-t border-stone-800 pt-3 mt-3">
                                         <div className="flex justify-between text-lg font-semibold">
                                             <span className="text-white">Total</span>
                                             <span className="text-amber-500">₱{formatCurrency(order.total_price)}</span>
@@ -179,9 +209,41 @@ export default function Show({ order }) {
                                     </div>
                                 </div>
                             </div>
+                        </div>
+
+                        {/* Right Column – Customer, Payment, Status (now less cramped) */}
+                        <div className="space-y-6">
+                            {/* Payment Information – NEW CARD */}
+                            <div className="bg-black border border-stone-800 rounded-lg overflow-hidden">
+                                <div className="px-6 py-4 bg-stone-900 border-b border-stone-800">
+                                    <h2 className="text-lg font-semibold text-white">Payment Information</h2>
+                                </div>
+                                <div className="p-6 space-y-3">
+                                    <div>
+                                        <p className="text-xs text-stone-400">Method</p>
+                                        <p className="text-sm text-white font-medium mt-1">
+                                            {getPaymentMethodLabel(order.payment_method)}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs text-stone-400">Status</p>
+                                        <p className={`text-sm font-medium mt-1 ${order.payment_status === 'paid' ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                            {getPaymentStatusLabel(order.payment_status)}
+                                        </p>
+                                    </div>
+                                    {order.payment_method === 'cod' && order.down_payment_amount > 0 && (
+                                        <div className="pt-2 border-t border-stone-800">
+                                            <p className="text-xs text-stone-400">Down Payment</p>
+                                            <p className="text-sm text-white mt-1">₱{formatCurrency(order.down_payment_amount)}</p>
+                                            <p className="text-xs text-stone-400 mt-2">Remaining Balance</p>
+                                            <p className="text-sm text-amber-400 mt-1">₱{formatCurrency(order.remaining_balance)}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
 
                             {/* Customer Information */}
-                            <div className="bg-black border border-stone-800 rounded-lg overflow-hidden mt-6">
+                            <div className="bg-black border border-stone-800 rounded-lg overflow-hidden">
                                 <div className="px-6 py-4 bg-stone-900 border-b border-stone-800">
                                     <h2 className="text-lg font-semibold text-white">Customer Information</h2>
                                 </div>
@@ -214,9 +276,9 @@ export default function Show({ order }) {
                             </div>
 
                             {/* Order Status */}
-                            <div className="bg-black border border-stone-800 rounded-lg overflow-hidden mt-6">
+                            <div className="bg-black border border-stone-800 rounded-lg overflow-hidden">
                                 <div className="px-6 py-4 bg-stone-900 border-b border-stone-800">
-                                    <h2 className="text-lg font-semibold text-white">Status</h2>
+                                    <h2 className="text-lg font-semibold text-white">Order Status</h2>
                                 </div>
                                 <div className="p-6">
                                     <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${statusColors[order.status]}`}>

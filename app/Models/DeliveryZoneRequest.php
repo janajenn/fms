@@ -18,12 +18,16 @@ class DeliveryZoneRequest extends Model
         'full_address',
         'notes',
         'status',
+        'latitude',
+        'longitude',
         'admin_notes',
         'added_to_zone_id',
     ];
 
     protected $casts = [
         'status' => 'string',
+        'latitude' => 'double',
+        'longitude' => 'double',
     ];
 
     public function addedToZone()

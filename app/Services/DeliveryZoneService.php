@@ -52,28 +52,45 @@ public function checkDeliverabilityByBarangay($barangay)
 /**
  * Check deliverability by city or barangay
  */
-public function checkDeliverability($city, $barangay = null)
+public function checkDeliverability($city, $barangay = null, $lat = null, $lng = null)
 {
+    $zones = DeliveryZone::where('is_active', true)->orderBy('sort_order')->get();
+
+    // 1) If coordinates available, try proximity matching (most accurate)
+    if ($lat && $lng) {
+        foreach ($zones as $zone) {
+            $locations = DeliveryZoneLocation::where('delivery_zone_id', $zone->id)
+                ->whereNotNull('latitude')
+                ->whereNotNull('longitude')
+                ->get();
+            foreach ($locations as $location) {
+                if ($this->isWithinRadius($lat, $lng, $location->latitude, $location->longitude, 5)) {
+                    return [
+                        'zone' => $zone,
+                        'fee' => (float) $zone->delivery_fee,
+                        'matched_on' => 'proximity',
+                        'matched_location' => $location->location_name
+                    ];
+                }
+            }
+        }
+    }
+
+    // 2) Fallback to string matching (original logic)
+    // Assume $city, $barangay are strings
     $city = $city ? trim(strtolower($city)) : '';
     $barangay = $barangay ? trim(strtolower($barangay)) : null;
-
-    $zones = DeliveryZone::where('is_active', true)
-        ->orderBy('sort_order')
-        ->get();
 
     foreach ($zones as $zone) {
         $locations = DeliveryZoneLocation::where('delivery_zone_id', $zone->id)
             ->where('is_active', true)
             ->get();
 
-        // First check for barangay match (most specific)
         if ($barangay) {
             foreach ($locations as $location) {
                 if ($location->location_type === 'barangay') {
                     $locationName = trim(strtolower($location->location_name));
-                    if ($locationName === $barangay ||
-                        str_contains($barangay, $locationName) ||
-                        str_contains($locationName, $barangay)) {
+                    if ($this->normalizeLocation($locationName) === $this->normalizeLocation($barangay)) {
                         return [
                             'zone' => $zone,
                             'fee' => (float) $zone->delivery_fee,
@@ -85,14 +102,11 @@ public function checkDeliverability($city, $barangay = null)
             }
         }
 
-        // Check for city match (only if city is provided)
         if ($city) {
             foreach ($locations as $location) {
                 if ($location->location_type === 'city') {
                     $locationName = trim(strtolower($location->location_name));
-                    if ($locationName === $city ||
-                        str_contains($city, $locationName) ||
-                        str_contains($locationName, $city)) {
+                    if ($this->normalizeLocation($locationName) === $this->normalizeLocation($city)) {
                         return [
                             'zone' => $zone,
                             'fee' => (float) $zone->delivery_fee,
@@ -108,20 +122,19 @@ public function checkDeliverability($city, $barangay = null)
     return null;
 }
 
-    /**
-     * Normalize a location string for comparison
-     */
-    private function normalizeLocation($string)
-    {
-        // Convert to lowercase
-        $string = strtolower($string);
-        // Remove extra spaces
-        $string = preg_replace('/\s+/', ' ', $string);
-        // Remove special characters except spaces and letters
-        $string = preg_replace('/[^a-z0-9\s]/', '', $string);
-        return trim($string);
-    }
 
+
+/**
+ * Normalize a location string for fuzzy matching
+ */
+private function normalizeLocation($name)
+{
+    $name = strtolower(trim($name));
+    // remove common suffixes like "city", "municipality", "town", "barangay"
+    $name = preg_replace('/\b(city|municipality|town|barangay)\b/', '', $name);
+    // remove extra spaces
+    return preg_replace('/\s+/', ' ', trim($name));
+}
     /**
      * Check if two location names match
      */

@@ -217,7 +217,7 @@ const handleMapLocationSelect = async ({ city, barangay, lat, lng, locationName 
     const handleSubmit = (e) => {
     e.preventDefault();
 
-    // Ensure postal_code has a value
+    // Validate postal code
     if (!formData.postal_code) {
         showToast('error', 'Missing Information', 'Please enter your postal code.');
         return;
@@ -234,11 +234,38 @@ const handleMapLocationSelect = async ({ city, barangay, lat, lng, locationName 
         return;
     }
 
-    // Continue with existing submit logic...
+    // For GCash, use a regular HTML form submission (not Inertia)
     if (formData.payment_method === 'gcash') {
-        // ... existing GCash logic
+        // Create a temporary form element
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = route('checkout.store');
+
+        // Add CSRF token
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = '_token';
+        csrfInput.value = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        form.appendChild(csrfInput);
+
+        // Add all form fields as hidden inputs
+        const dataToSubmit = { ...formData, delivery_fee: deliveryFee };
+        Object.entries(dataToSubmit).forEach(([key, value]) => {
+            if (value !== null && value !== undefined) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = key;
+                input.value = typeof value === 'object' ? JSON.stringify(value) : value;
+                form.appendChild(input);
+            }
+        });
+
+        document.body.appendChild(form);
+        form.submit(); // This will perform a full page POST -> redirect to PayMongo
+        return;
     }
 
+    // For COD, keep using Inertia (no external redirect)
     setIsSubmitting(true);
     router.post(route('checkout.store'), {
         ...formData,
@@ -260,6 +287,8 @@ const handleMapLocationSelect = async ({ city, barangay, lat, lng, locationName 
         },
     });
 };
+
+
 
     const handleRequestSubmitted = () => {
         showToast('success', 'Request Submitted', 'We will contact you within 24-48 hours.');

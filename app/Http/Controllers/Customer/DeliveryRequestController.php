@@ -19,57 +19,48 @@ class DeliveryRequestController extends Controller
     }
 
      public function store(Request $request)
-    {
-        try {
-            $validated = $request->validate([
-                'customer_name' => 'required|string|max:255',
-                'customer_email' => 'nullable|email|max:255',
-                'customer_phone' => 'required|string|max:20',
-                'requested_city' => 'required|string|max:255',
-                'requested_barangay' => 'nullable|string|max:255',
-                'full_address' => 'required|string',
-                'notes' => 'nullable|string',
-            ]);
+{
+    try {
+        $validated = $request->validate([
+            'customer_name' => 'required|string|max:255',
+            'customer_email' => 'nullable|email|max:255',
+            'customer_phone' => 'required|string|max:20',
+            'requested_city' => 'required|string|max:255',
+            'requested_barangay' => 'nullable|string|max:255',
+            'full_address' => 'required|string',
+            'notes' => 'nullable|string',
+            'latitude' => 'nullable|numeric',   // <-- new
+            'longitude' => 'nullable|numeric',  // <-- new
+        ]);
 
-            // Create the request
-            $deliveryRequest = DeliveryZoneRequest::create([
-                'customer_name' => $validated['customer_name'],
-                'customer_email' => $validated['customer_email'] ?? null,
-                'customer_phone' => $validated['customer_phone'],
-                'requested_city' => $validated['requested_city'],
-                'requested_barangay' => $validated['requested_barangay'] ?? null,
-                'full_address' => $validated['full_address'],
-                'notes' => $validated['notes'] ?? null,
-                'status' => 'pending',
-            ]);
+        $deliveryRequest = DeliveryZoneRequest::create([
+            'customer_name' => $validated['customer_name'],
+            'customer_email' => $validated['customer_email'] ?? null,
+            'customer_phone' => $validated['customer_phone'],
+            'requested_city' => $validated['requested_city'],
+            'requested_barangay' => $validated['requested_barangay'] ?? null,
+            'full_address' => $validated['full_address'],
+            'notes' => $validated['notes'] ?? null,
+            'latitude' => $validated['latitude'] ?? null,   // <--
+            'longitude' => $validated['longitude'] ?? null, // <--
+            'status' => 'pending',
+        ]);
 
-            // Log the request
-            Log::info('New delivery request submitted', [
-                'request_id' => $deliveryRequest->id,
-                'city' => $deliveryRequest->requested_city,
-                'customer' => $deliveryRequest->customer_name
-            ]);
+        Log::info('New delivery request submitted', ['request_id' => $deliveryRequest->id]);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Your delivery request has been submitted. We will contact you within 24-48 hours.',
-                'reference_id' => $deliveryRequest->id
-            ], 200);
+        return response()->json([
+            'success' => true,
+            'message' => 'Your delivery request has been submitted. We will contact you within 24-48 hours.',
+        ], 200);
 
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors()
-            ], 422);
-        } catch (\Exception $e) {
-            Log::error('Delivery request failed: ' . $e->getMessage());
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to submit request. Please try again or contact us directly.'
-            ], 500);
-        }
+    } catch (\Exception $e) {
+        Log::error('Delivery request failed: ' . $e->getMessage());
+        return response()->json([
+            'success' => false,
+            'message' => 'Failed to submit request. Please try again.'
+        ], 500);
     }
+}
 
     private function notifyAdmin($deliveryRequest)
     {

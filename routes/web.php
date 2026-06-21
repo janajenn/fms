@@ -42,6 +42,8 @@ Route::get('/products/{product}', [CustomerProductController::class, 'show'])->n
 Route::post('/checkout/validate-delivery', [CheckoutController::class, 'validateDelivery'])->name('checkout.validate-delivery');
 Route::get('/delivery-zones-public', [DeliveryZoneController::class, 'getPublicZones'])->name('delivery-zones.public');
 
+
+//CUSTOMER ROUTES - these require authentication, so they are inside the auth middleware group below
 // Authenticated routes only
 Route::middleware(['auth'])->group(function () {
     // Cart routes
@@ -104,7 +106,7 @@ Route::get('/notifications/unread-count', [App\Http\Controllers\NotificationCont
     ->name('notifications.unread-count');
 
 
-    
+
 });
 
 // Admin routes (require auth + admin middleware)
@@ -189,6 +191,9 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
         Route::get('/stock', [ReportController::class, 'stockReport'])->name('stock');
         Route::get('/stock-logs', [ReportController::class, 'stockLogsReport'])->name('stock-logs');
     });
+
+
+   Route::get('/reports/sales', [App\Http\Controllers\Admin\ReportController::class, 'salesReport'])->name('reports.sales');
 
 
 

@@ -85,4 +85,10 @@ public function availableCustomizationOptions()
                 ->withPivot('is_available', 'sort_order')
                 ->withTimestamps();
 }
+
+
+public function getPriceAttribute()
+{
+    return $this->base_price ?? 0;
+}
 }
